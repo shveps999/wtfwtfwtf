@@ -28,7 +28,7 @@ async def cmd_start(message: Message, state: FSMContext, db):
     # Проверяем, есть ли у пользователя город
     if not user.city:
         await message.answer(
-            "👋 Добро пожаловать в Events Bot!\n\n"
+            "👋 Добро пожаловать в Сердце!\n\n"
             "Для начала работы выберите ваш город:",
             reply_markup=get_city_keyboard(),
         )
