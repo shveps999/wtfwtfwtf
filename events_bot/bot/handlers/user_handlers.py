@@ -21,13 +21,7 @@ def register_user_handlers(dp: Router):
 async def cmd_main_menu(message: Message):
     """Обработчик команды /menu для главного меню"""
     menu_text = """
-🏠 *Главное меню*
-
-📝 Создать новый пост - /create_post
-📊 Мои посты - /my_posts
-🏙️ Изменить город - /change_city
-📂 Изменить категории - /change_category
-ℹ️ Справка - /help
+*Главное меню*
 """
     await message.answer(
         menu_text,
