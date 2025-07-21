@@ -1,16 +1,16 @@
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardMarkup
 
-
 def get_main_keyboard() -> InlineKeyboardMarkup:
-    """Главная инлайн-клавиатура с основными действиями"""
+    """Главное меню с кнопкой избранного"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="📝 Создать пост", callback_data="create_post")
-    builder.button(text="📊 Мои посты", callback_data="my_posts")
-    builder.button(text="📰 Лента", callback_data="feed")
-    builder.button(text="🏙️ Изменить город", callback_data="change_city")
-    builder.button(text="📂 Изменить категорию", callback_data="change_category")
-    builder.button(text="🔍 Модерация", callback_data="moderation")
-    builder.button(text="ℹ️ Помощь", callback_data="help")
+    
+    builder.button(text="📮 Смотреть подборку ⠀⠀", callback_data="feed")
+    builder.button(text="❤️ Избранное ⠀  ⠀  ⠀  ⠀", callback_data="liked_posts")
+    builder.button(text="✏️ Создать свой пост ⠀  ", callback_data="create_post") 
+    builder.button(text="🏙 Изменить город ⠀  ⠀ ", callback_data="change_city")
+    builder.button(text="⭐️ Изменить категории⠀⠀", callback_data="change_category")
+    builder.button(text="💬 Помощь⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   ", callback_data="help")
+    
     builder.adjust(1)
     return builder.as_markup()
