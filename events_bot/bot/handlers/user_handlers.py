@@ -17,6 +17,25 @@ def register_user_handlers(dp: Router):
     dp.include_router(router)
 
 
+@router.message(F.text.in_(["/menu", "/main_menu"]))
+async def cmd_main_menu(message: Message):
+    """Обработчик команды /menu для главного меню"""
+    menu_text = """
+🏠 *Главное меню*
+
+📝 Создать новый пост - /create_post
+📊 Мои посты - /my_posts
+🏙️ Изменить город - /change_city
+📂 Изменить категории - /change_category
+ℹ️ Справка - /help
+"""
+    await message.answer(
+        menu_text,
+        reply_markup=get_main_keyboard(),
+        parse_mode="Markdown"
+    )
+
+
 @router.message(F.text == "/my_posts")
 async def cmd_my_posts(message: Message, db):
     """Обработчик команды /my_posts"""
@@ -83,6 +102,7 @@ async def cmd_help(message: Message):
 • /moderation - доступ к модерации (для модераторов)
 • /change_city - смена города для получения уведомлений
 • /change_category - смена категории для публикации постов
+• /menu - главное меню
 
 📋 **Как использовать:**
 1. Выберите город проживания
@@ -194,6 +214,7 @@ async def show_help_callback(callback: CallbackQuery):
 • 📊 Мои посты - просмотр ваших опубликованных постов
 • 🏙️ Изменить город - смена города для получения уведомлений
 • 📂 Изменить категорию - смена категории для публикации постов
+• 🏠 Главное меню - /menu
 
 📋 **Как использовать:**
 1. Выберите город проживания
@@ -211,5 +232,25 @@ async def show_help_callback(callback: CallbackQuery):
 
     await callback.message.edit_text(
         help_text, reply_markup=get_main_keyboard(), parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "main_menu")
+async def show_main_menu_callback(callback: CallbackQuery):
+    """Обработчик кнопки возврата в главное меню"""
+    menu_text = """
+🏠 *Главное меню*
+
+📝 Создать новый пост - /create_post
+📊 Мои посты - /my_posts
+🏙️ Изменить город - /change_city
+📂 Изменить категории - /change_category
+ℹ️ Справка - /help
+"""
+    await callback.message.edit_text(
+        menu_text,
+        reply_markup=get_main_keyboard(),
+        parse_mode="Markdown"
     )
     await callback.answer()
