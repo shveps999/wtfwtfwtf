@@ -240,13 +240,7 @@ async def show_help_callback(callback: CallbackQuery):
 async def show_main_menu_callback(callback: CallbackQuery):
     """Обработчик кнопки возврата в главное меню"""
     menu_text = """
-🏠 *Главное меню*
-
-📝 Создать новый пост - /create_post
-📊 Мои посты - /my_posts
-🏙️ Изменить город - /change_city
-📂 Изменить категории - /change_category
-ℹ️ Справка - /help
+ *Главное меню*
 """
     await callback.message.edit_text(
         menu_text,
