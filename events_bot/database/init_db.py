@@ -1,51 +1,28 @@
-from .connection import create_async_engine_and_session
+from . import Database
 from .repositories import CategoryRepository
 import logfire
 import logging
 
-# Настройка логирования
 logger = logging.getLogger(__name__)
 
 async def init_database():
     """Асинхронная инициализация базы данных с примерами категорий"""
-    engine, session_maker = create_async_engine_and_session()
-
-    # Создаем таблицы
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    # Создаем сессию для добавления данных
-    async with session_maker() as db:
+    async with Database.get_session() as db:
         try:
             # Проверяем, есть ли уже категории
             existing_categories = await CategoryRepository.get_all_active(db)
             if not existing_categories:
                 # Создаем примеры категорий
                 categories_data = [
-                    {
-                        "name": "Технологии",
-                        "description": "Новости и обсуждения в сфере технологий",
-                    },
+                    {"name": "Технологии", "description": "Новости и обсуждения в сфере технологий"},
                     {"name": "Спорт", "description": "Спортивные новости и события"},
-                    {
-                        "name": "Культура",
-                        "description": "Культурные события и искусство",
-                    },
+                    {"name": "Культура", "description": "Культурные события и искусство"},
                     {"name": "Наука", "description": "Научные открытия и исследования"},
                     {"name": "Бизнес", "description": "Бизнес новости и экономика"},
-                    {
-                        "name": "Здоровье",
-                        "description": "Медицина и здоровый образ жизни",
-                    },
-                    {
-                        "name": "Образование",
-                        "description": "Образовательные программы и курсы",
-                    },
+                    {"name": "Здоровье", "description": "Медицина и здоровый образ жизни"},
+                    {"name": "Образование", "description": "Образовательные программы и курсы"},
                     {"name": "Путешествия", "description": "Туризм и путешествия"},
-                    {
-                        "name": "Кулинария",
-                        "description": "Рецепты и кулинарные новости",
-                    },
+                    {"name": "Кулинария", "description": "Рецепты и кулинарные новости"},
                     {"name": "Авто", "description": "Автомобильная тематика"},
                     {"name": "Мода", "description": "Модные тренды и стиль"},
                     {"name": "Музыка", "description": "Музыкальные новости и события"},
@@ -63,18 +40,12 @@ async def init_database():
 
                 logfire.info("Database initialized with example categories!")
             else:
-                logfire.info(
-                    f"Database already has {len(existing_categories)} categories"
-                )
+                logfire.info(f"Database already has {len(existing_categories)} categories")
 
         except Exception as e:
             logfire.error(f"Error initializing database: {e}")
             await db.rollback()
 
-    await engine.dispose()
-
-
 if __name__ == "__main__":
     import asyncio
-
     asyncio.run(init_database())
