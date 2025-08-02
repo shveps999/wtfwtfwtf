@@ -4,13 +4,13 @@ Telegram Events Bot - Основной файл приложения
 """
 
 import logfire
+
 logfire.configure(scrubbing=False)
 
 import asyncio
 import os
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-from events_bot.database import initialize_database, create_tables, close_connections
 from events_bot.database import init_database
 from events_bot.bot.handlers import (
     register_start_handlers,
@@ -23,18 +23,21 @@ from events_bot.bot.handlers import (
 from events_bot.bot.middleware import DatabaseMiddleware
 from loguru import logger
 
-logger.configure(handlers=[logfire.loguru_handler()])
+logger.configure(
+    handlers=[logfire.loguru_handler()]
+)
+
 
 async def main():
     """Главная функция бота"""
+    # Получаем токен из переменных окружения
     token = os.getenv("BOT_TOKEN")
     if not token:
         logfire.error("❌ Error: BOT_TOKEN not set")
         return
 
-    # Инициализация базы данных
-    initialize_database()
-    await create_tables()
+    # Инициализируем базу данных
+
     await init_database()
     logfire.info("✅ Database initialized")
 
@@ -43,7 +46,7 @@ async def main():
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
 
-    # Подключаем middleware
+    # Подключаем middleware для базы данных
     dp.message.middleware(DatabaseMiddleware())
     dp.callback_query.middleware(DatabaseMiddleware())
 
@@ -58,12 +61,13 @@ async def main():
     logfire.info("🤖 Bot started...")
 
     try:
+        # Запускаем бота
         await dp.start_polling(bot)
     except KeyboardInterrupt:
         logfire.info("🛑 Bot stopped")
     finally:
         await bot.session.close()
-        await close_connections()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
