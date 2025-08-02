@@ -1,51 +1,28 @@
-from . import Database
+from . import get_db_session
 from .repositories import CategoryRepository
 import logfire
-import logging
-
-logger = logging.getLogger(__name__)
 
 async def init_database():
-    """Асинхронная инициализация базы данных с примерами категорий"""
-    async with Database.get_session() as db:
+    """Инициализация начальных данных"""
+    async for session in get_db_session():
         try:
-            # Проверяем, есть ли уже категории
-            existing_categories = await CategoryRepository.get_all_active(db)
-            if not existing_categories:
-                # Создаем примеры категорий
-                categories_data = [
-                    {"name": "Технологии", "description": "Новости и обсуждения в сфере технологий"},
-                    {"name": "Спорт", "description": "Спортивные новости и события"},
-                    {"name": "Культура", "description": "Культурные события и искусство"},
-                    {"name": "Наука", "description": "Научные открытия и исследования"},
-                    {"name": "Бизнес", "description": "Бизнес новости и экономика"},
-                    {"name": "Здоровье", "description": "Медицина и здоровый образ жизни"},
-                    {"name": "Образование", "description": "Образовательные программы и курсы"},
-                    {"name": "Путешествия", "description": "Туризм и путешествия"},
-                    {"name": "Кулинария", "description": "Рецепты и кулинарные новости"},
-                    {"name": "Авто", "description": "Автомобильная тематика"},
-                    {"name": "Мода", "description": "Модные тренды и стиль"},
-                    {"name": "Музыка", "description": "Музыкальные новости и события"},
-                    {"name": "Кино", "description": "Фильмы, сериалы и кинематограф"},
-                    {"name": "Книги", "description": "Литература и книжные новинки"},
-                    {"name": "Игры", "description": "Видеоигры и игровая индустрия"},
+            existing = await CategoryRepository.get_all_active(session)
+            if not existing:
+                categories = [
+                    "Технологии", "Спорт", "Культура", "Наука", "Бизнес",
+                    "Здоровье", "Образование", "Путешествия", "Кулинария",
+                    "Авто", "Мода", "Музыка", "Кино", "Книги", "Игры"
                 ]
-
-                for category_data in categories_data:
-                    await CategoryRepository.create_category(
-                        db,
-                        name=category_data["name"],
-                        description=category_data["description"],
-                    )
-
-                logfire.info("Database initialized with example categories!")
+                
+                for name in categories:
+                    await CategoryRepository.create_category(session, name=name)
+                
+                logfire.info("Добавлены категории по умолчанию")
             else:
-                logfire.info(f"Database already has {len(existing_categories)} categories")
-
+                logfire.info(f"В БД уже есть {len(existing)} категорий")
+            
+            await session.commit()
         except Exception as e:
-            logfire.error(f"Error initializing database: {e}")
-            await db.rollback()
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(init_database())
+            await session.rollback()
+            logfire.error(f"Ошибка инициализации БД: {e}")
+            raise
