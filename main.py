@@ -10,7 +10,7 @@ import asyncio
 import os
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-from events_bot.database import init_database, create_tables, dispose_engine
+from events_bot.database import Database, init_database
 from events_bot.bot.handlers import (
     register_start_handlers,
     register_user_handlers,
@@ -32,11 +32,9 @@ async def main():
         return
 
     # Инициализируем базу данных
+    await Database.create_tables()
     await init_database()
     logfire.info("✅ Database initialized")
-    
-    # Создаем таблицы, если их нет
-    await create_tables()
 
     # Создаем бота и диспетчер
     bot = Bot(token=token)
@@ -63,7 +61,7 @@ async def main():
         logfire.info("🛑 Bot stopped")
     finally:
         await bot.session.close()
-        await dispose_engine()  # Закрываем соединения с БД
+        await Database.dispose()  # Закрываем соединения с БД
 
 if __name__ == "__main__":
     asyncio.run(main())
