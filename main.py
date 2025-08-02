@@ -10,7 +10,8 @@ import asyncio
 import os
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-from events_bot.database import Database, init_database
+from events_bot.database import initialize_database, create_tables, close_connections
+from events_bot.database import init_database
 from events_bot.bot.handlers import (
     register_start_handlers,
     register_user_handlers,
@@ -31,8 +32,9 @@ async def main():
         logfire.error("❌ Error: BOT_TOKEN not set")
         return
 
-    # Инициализируем базу данных
-    await Database.create_tables()
+    # Инициализация базы данных
+    initialize_database()
+    await create_tables()
     await init_database()
     logfire.info("✅ Database initialized")
 
@@ -61,7 +63,7 @@ async def main():
         logfire.info("🛑 Bot stopped")
     finally:
         await bot.session.close()
-        await Database.dispose()  # Закрываем соединения с БД
+        await close_connections()
 
 if __name__ == "__main__":
     asyncio.run(main())
