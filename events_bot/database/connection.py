@@ -2,73 +2,86 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import DeclarativeBase
 import os
 from .models import Base
-from logfire import instrument_sqlalchemy
 import logging
+from contextlib import asynccontextmanager
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
 
-# Глобальные переменные для engine и session maker
-_async_engine = None
-_async_session_maker = None
+class Database:
+    _engine = None
+    _session_factory = None
 
-def get_database_url():
-    """Получает URL базы данных из переменных окружения"""
-    database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./events_bot.db")
-    
-    # Автоматическое преобразование синхронных URL в асинхронные
-    if database_url.startswith("postgresql://"):
-        return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    elif database_url.startswith("mysql://"):
-        return database_url.replace("mysql://", "mysql+aiomysql://", 1)
-    return database_url
+    @classmethod
+    def get_engine(cls):
+        """Получить или создать движок базы данных"""
+        if cls._engine is None:
+            database_url = cls.get_database_url()
+            logger.info(f"Инициализация движка БД: {database_url}")
+            
+            cls._engine = create_async_engine(
+                database_url,
+                echo=False,
+                pool_size=10,
+                max_overflow=5,
+                pool_pre_ping=True
+            )
+        return cls._engine
 
-def create_async_engine_and_session():
-    """Создает асинхронный движок и фабрику сессий (один раз при инициализации)"""
-    global _async_engine, _async_session_maker
-    
-    if _async_engine is None:
-        database_url = get_database_url()
-        logger.info(f"Создание движка для БД: {database_url}")
-        
-        _async_engine = create_async_engine(
-            database_url, 
-            echo=False,
-            pool_size=10,
-            max_overflow=5,
-            pool_pre_ping=True
-        )
-        
-        # Инструментируем SQLAlchemy для логирования запросов
-        instrument_sqlalchemy(_async_engine)
-        
-        _async_session_maker = async_sessionmaker(
-            bind=_async_engine, 
-            class_=AsyncSession, 
-            expire_on_commit=False,
-            autoflush=False
-        )
-    
-    return _async_engine, _async_session_maker
+    @classmethod
+    def get_session_factory(cls):
+        """Получить или создать фабрику сессий"""
+        if cls._session_factory is None:
+            engine = cls.get_engine()
+            cls._session_factory = async_sessionmaker(
+                bind=engine,
+                class_=AsyncSession,
+                expire_on_commit=False,
+                autoflush=False
+            )
+        return cls._session_factory
 
-async def get_async_session() -> AsyncSession:
-    """Получение асинхронной сессии (для использования в зависимостях FastAPI)"""
-    _, session_maker = create_async_engine_and_session()
-    async with session_maker() as session:
+    @staticmethod
+    def get_database_url():
+        """Получить URL базы данных из переменных окружения"""
+        database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./events_bot.db")
+        
+        # Автоматическое преобразование URL
+        if database_url.startswith("postgresql://"):
+            return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif database_url.startswith("mysql://"):
+            return database_url.replace("mysql://", "mysql+aiomysql://", 1)
+        return database_url
+
+    @classmethod
+    @asynccontextmanager
+    async def get_session(cls):
+        """Асинхронный контекстный менеджер для работы с сессией"""
+        session_factory = cls.get_session_factory()
+        session = session_factory()
         try:
             yield session
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Ошибка в сессии: {e}")
+            raise
         finally:
             await session.close()
 
-async def create_tables():
-    """Создание таблиц в базе данных (асинхронно)"""
-    engine, _ = create_async_engine_and_session()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    @classmethod
+    async def create_tables(cls):
+        """Создать таблицы в базе данных"""
+        engine = cls.get_engine()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Таблицы БД успешно созданы")
 
-async def dispose_engine():
-    """Закрытие соединений с БД (вызывается при завершении приложения)"""
-    global _async_engine
-    if _async_engine:
-        await _async_engine.dispose()
-        logger.info("Соединения с БД закрыты")
+    @classmethod
+    async def dispose(cls):
+        """Закрыть все соединения с БД"""
+        if cls._engine:
+            await cls._engine.dispose()
+            cls._engine = None
+            cls._session_factory = None
+            logger.info("Соединения с БД закрыты")
