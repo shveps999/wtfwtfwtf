@@ -3,59 +3,72 @@ from sqlalchemy.orm import DeclarativeBase
 import os
 from .models import Base
 from logfire import instrument_sqlalchemy
+import logging
 
+# Настройка логирования
+logger = logging.getLogger(__name__)
+
+# Глобальные переменные для engine и session maker
+_async_engine = None
+_async_session_maker = None
 
 def get_database_url():
-    """Получает URL базы данных из переменных окружения или использует SQLite по умолчанию"""
-    database_url = os.getenv("DATABASE_URL")
-
-    # Если указан TEST_MODE, используем временную базу в памяти
-
-    if database_url:
-        # Преобразуем синхронный URL в асинхронный
-        if database_url.startswith("postgresql://"):
-            return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        elif database_url.startswith("mysql://"):
-            return database_url.replace("mysql://", "mysql+aiomysql://", 1)
-        else:
-            return database_url
-
-        
-already_instrumented = False
+    """Получает URL базы данных из переменных окружения"""
+    database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./events_bot.db")
+    
+    # Автоматическое преобразование синхронных URL в асинхронные
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif database_url.startswith("mysql://"):
+        return database_url.replace("mysql://", "mysql+aiomysql://", 1)
+    return database_url
 
 def create_async_engine_and_session():
-    """Создает асинхронный движок базы данных и сессию"""
-    database_url = get_database_url()
-    engine = create_async_engine(database_url, echo=True)
-    session_maker = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
-    global already_instrumented
-    if not already_instrumented:
-        instrument_sqlalchemy(engine)
-        already_instrumented = True
-    return engine, session_maker
+    """Создает асинхронный движок и фабрику сессий (один раз при инициализации)"""
+    global _async_engine, _async_session_maker
+    
+    if _async_engine is None:
+        database_url = get_database_url()
+        logger.info(f"Создание движка для БД: {database_url}")
+        
+        _async_engine = create_async_engine(
+            database_url, 
+            echo=False,
+            pool_size=10,
+            max_overflow=5,
+            pool_pre_ping=True
+        )
+        
+        # Инструментируем SQLAlchemy для логирования запросов
+        instrument_sqlalchemy(_async_engine)
+        
+        _async_session_maker = async_sessionmaker(
+            bind=_async_engine, 
+            class_=AsyncSession, 
+            expire_on_commit=False,
+            autoflush=False
+        )
+    
+    return _async_engine, _async_session_maker
 
-
-async def create_tables(engine):
-    """Создает все таблицы в базе данных асинхронно"""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-
-async def get_db():
-    """Асинхронный генератор для получения сессии базы данных"""
-    engine, session_maker = create_async_engine_and_session()
+async def get_async_session() -> AsyncSession:
+    """Получение асинхронной сессии (для использования в зависимостях FastAPI)"""
+    _, session_maker = create_async_engine_and_session()
     async with session_maker() as session:
         try:
             yield session
         finally:
             await session.close()
 
+async def create_tables():
+    """Создание таблиц в базе данных (асинхронно)"""
+    engine, _ = create_async_engine_and_session()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-# Для обратной совместимости (если нужно)
-def create_engine_and_session():
-    """Синхронная версия для обратной совместимости"""
-    raise NotImplementedError(
-        "Используйте create_async_engine_and_session() для асинхронной работы"
-    )
+async def dispose_engine():
+    """Закрытие соединений с БД (вызывается при завершении приложения)"""
+    global _async_engine
+    if _async_engine:
+        await _async_engine.dispose()
+        logger.info("Соединения с БД закрыты")
