@@ -1,14 +1,18 @@
-from .connection import create_async_engine_and_session, create_tables
+from .connection import create_async_engine_and_session
 from .repositories import CategoryRepository
 import logfire
+import logging
 
+# Настройка логирования
+logger = logging.getLogger(__name__)
 
 async def init_database():
     """Асинхронная инициализация базы данных с примерами категорий"""
     engine, session_maker = create_async_engine_and_session()
 
     # Создаем таблицы
-    await create_tables(engine)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
     # Создаем сессию для добавления данных
     async with session_maker() as db:
