@@ -7,8 +7,11 @@ from events_bot.bot.keyboards import get_city_keyboard, get_main_keyboard
 
 router = Router()
 
+
 def register_start_handlers(dp: Router):
+    """Регистрация обработчиков команды start"""
     dp.include_router(router)
+
 
 @router.message(F.text == "/start")
 async def cmd_start(message: Message, state: FSMContext, db):
