@@ -66,7 +66,7 @@ async def main():
     except KeyboardInterrupt:
         logfire.info("🛑 Bot stopped")
     finally:
-        await bot.session.close(
+        await bot.session.close()
 
 
 if __name__ == "__main__":
