@@ -6,148 +6,108 @@ import os
 import logfire
 from events_bot.bot.keyboards.moderation_keyboard import get_moderation_keyboard
 from events_bot.storage import file_storage
-from aiogram.types import FSInputFile, InputMediaPhoto
+from aiogram.types import FSInputFile
 from .moderation_service import ModerationService
+from datetime import datetime
 
 
 class PostService:
     """Асинхронный сервис для работы с постами"""
 
     @staticmethod
-    async def create_post(
-        db: AsyncSession, title: str, content: str, author_id: int, category_ids: List[int], city: str = None, image_id: str = None
-    ) -> Post:
-        """Создать новый пост"""
-        return await PostRepository.create_post(
-            db, title, content, author_id, category_ids, city, image_id
-        )
-
-    @staticmethod
     async def create_post_and_send_to_moderation(
-        db: AsyncSession, title: str, content: str, author_id: int, category_ids: List[int], city: str = None, image_id: str = None, bot=None
+        db: AsyncSession,
+        title: str,
+        content: str,
+        author_id: int,
+        category_ids: List[int],
+        city: str = None,
+        image_id: str = None,
+        event_datetime: datetime = None,
+        bot=None
     ) -> Post:
-        """Создать пост и отправить на модерацию"""
-        # Создаем пост
         post = await PostRepository.create_post(
-            db, title, content, author_id, category_ids, city, image_id
+            db=db,
+            title=title,
+            content=content,
+            author_id=author_id,
+            category_ids=category_ids,
+            city=city,
+            image_id=image_id,
+            event_datetime=event_datetime
         )
-        
-        # Отправляем на модерацию
         if post and bot:
             await PostService.send_post_to_moderation(bot, post, db)
-        
         return post
 
     @staticmethod
     async def send_post_to_moderation(bot, post: Post, db=None):
-        """Отправить пост на модерацию"""
         moderation_group_id = os.getenv("MODERATION_GROUP_ID")
-        logfire.info(f"MODERATION_GROUP_ID: {moderation_group_id}")
-        
         if not moderation_group_id:
             logfire.error("MODERATION_GROUP_ID не установлен")
             return
-        
-        # Загружаем связанные объекты если передан db
+
         if db:
             await db.refresh(post, attribute_names=["author", "categories"])
-        
-        # Форматируем пост для модерации
-        moderation_text = ModerationService.format_post_for_moderation(post)
-        moderation_keyboard = get_moderation_keyboard(post.id)
-        
-        logfire.info(f"Отправляем пост {post.id} на модерацию в группу {moderation_group_id}")
-        logfire.debug(f"Текст модерации: {moderation_text[:100]}...")
-        
+
+        author_name = post.author.first_name or post.author.username or "Аноним"
+        category_names = [cat.name for cat in post.categories] if post.categories else ["Без категории"]
+
+        text = (
+            f"📬 Новый пост на модерацию\n"
+            f"📝 Заголовок: {post.title}\n"
+            f"👤 Автор: {author_name}\n"
+            f"🏙️ Город: {post.city or 'Не указан'}\n"
+            f"🏷️ Категории: {', '.join(category_names)}\n"
+            f"📅 Событие: {post.event_datetime.strftime('%d.%m.%Y %H:%M') if post.event_datetime else 'Бессрочное'}"
+        )
+
+        keyboard = get_moderation_keyboard(post.id)
         try:
-            # Если у поста есть изображение, отправляем с фото
             if post.image_id:
-                logfire.info(f"Пост содержит изображение: {post.image_id}")
-                media_photo = await file_storage.get_media_photo(post.image_id)
-                if media_photo:
-                    logfire.info("Изображение найдено")
+                file_path = await file_storage.get_file_path(post.image_id)
+                if file_path:
                     await bot.send_photo(
                         chat_id=moderation_group_id,
-                        photo=media_photo.media,
-                        caption=moderation_text,
-                        reply_markup=moderation_keyboard
+                        photo=FSInputFile(file_path),
+                        caption=text,
+                        reply_markup=keyboard
                     )
-                    logfire.info("Пост с изображением отправлен на модерацию")
-                    return
                 else:
-                    logfire.warning("Изображение не найдено")
-            
-            # Если нет изображения, отправляем только текст
-            logfire.info("Отправляем пост без изображения")
-            await bot.send_message(
-                chat_id=moderation_group_id,
-                text=moderation_text,
-                reply_markup=moderation_keyboard
-            )
-            logfire.info("Пост без изображения отправлен на модерацию")
+                    await bot.send_message(moderation_group_id, text, reply_markup=keyboard)
+            else:
+                await bot.send_message(moderation_group_id, text, reply_markup=keyboard)
         except Exception as e:
             logfire.error(f"Ошибка отправки поста на модерацию: {e}")
-            import traceback
-            logfire.error(f"Стек ошибки: {traceback.format_exc()}")
 
     @staticmethod
     async def get_user_posts(db: AsyncSession, user_id: int) -> List[Post]:
-        """Получить посты пользователя"""
         return await PostRepository.get_user_posts(db, user_id)
 
     @staticmethod
     async def get_post_by_id(db: AsyncSession, post_id: int) -> Optional[Post]:
-        """Получить пост по ID"""
         return await PostRepository.get_post_by_id(db, post_id)
 
     @staticmethod
-    async def get_posts_by_categories(
-        db: AsyncSession, category_ids: list[int]
-    ) -> list[Post]:
-        """Получить посты по нескольким категориям"""
-        return await PostRepository.get_posts_by_categories(db, category_ids)
-
-    @staticmethod
-    async def get_pending_moderation_posts(db: AsyncSession) -> List[Post]:
-        """Получить посты, ожидающие модерации"""
-        return await PostRepository.get_pending_moderation(db)
-
-    @staticmethod
-    async def approve_post(
-        db: AsyncSession, post_id: int, moderator_id: int, comment: str = None
-    ) -> Post:
-        """Одобрить пост"""
+    async def approve_post(db: AsyncSession, post_id: int, moderator_id: int, comment: str = None) -> Post:
         return await PostRepository.approve_post(db, post_id, moderator_id, comment)
 
     @staticmethod
-    async def publish_post(
-        db: AsyncSession, post_id: int
-    ) -> Post:
-        """Опубликовать одобренный пост"""
+    async def publish_post(db: AsyncSession, post_id: int) -> Post:
         return await PostRepository.publish_post(db, post_id)
 
     @staticmethod
-    async def reject_post(
-        db: AsyncSession, post_id: int, moderator_id: int, comment: str = None
-    ) -> Post:
-        """Отклонить пост"""
+    async def reject_post(db: AsyncSession, post_id: int, moderator_id: int, comment: str = None) -> Post:
         return await PostRepository.reject_post(db, post_id, moderator_id, comment)
 
     @staticmethod
-    async def request_changes(
-        db: AsyncSession, post_id: int, moderator_id: int, comment: str = None
-    ) -> Post:
-        """Запросить изменения в посте"""
+    async def request_changes(db: AsyncSession, post_id: int, moderator_id: int, comment: str = None) -> Post:
         return await PostRepository.request_changes(db, post_id, moderator_id, comment)
 
     @staticmethod
-    async def get_feed_posts(
-        db: AsyncSession, user_id: int, limit: int = 10, offset: int = 0
-    ) -> List[Post]:
-        """Получить посты для ленты пользователя"""
+    async def get_feed_posts(db: AsyncSession, user_id: int, limit: int = 10, offset: int = 0) -> List[Post]:
         return await PostRepository.get_feed_posts(db, user_id, limit, offset)
 
     @staticmethod
     async def get_feed_posts_count(db: AsyncSession, user_id: int) -> int:
-        """Получить общее количество постов для ленты пользователя"""
         return await PostRepository.get_feed_posts_count(db, user_id)
