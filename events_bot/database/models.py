@@ -17,19 +17,18 @@ import enum
 from datetime import datetime
 
 
-# Базовый класс
+# Базовый класс для моделей
 class Base(DeclarativeBase):
     pass
 
 
-# Enum для действий модерации
-class ModerationAction(enum.Enum):
-    APPROVE = 1
-    REJECT = 2
-    REQUEST_CHANGES = 3
+# Миксин для времени создания и обновления
+class TimestampMixin:
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
 
-# Таблицы многие-ко-многим
+# Таблица связи многие-ко-многим: пользователи и категории
 user_categories = Table(
     "user_categories",
     Base.metadata,
@@ -37,17 +36,13 @@ user_categories = Table(
     Column("category_id", ForeignKey("categories.id"), primary_key=True),
 )
 
+# Таблица связи многие-ко-многим: посты и категории
 post_categories = Table(
     "post_categories",
     Base.metadata,
     Column("post_id", ForeignKey("posts.id"), primary_key=True),
     Column("category_id", ForeignKey("categories.id"), primary_key=True),
 )
-
-
-class TimestampMixin:
-    created_at = Column(DateTime, default=func.now(), nullable=False)
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
 
 class User(Base, TimestampMixin):
@@ -76,6 +71,12 @@ class Category(Base, TimestampMixin):
     # Связи
     users = relationship("User", secondary=user_categories, back_populates="categories")
     posts = relationship("Post", secondary=post_categories, back_populates="categories")
+
+
+class ModerationAction(enum.Enum):
+    APPROVE = 1
+    REJECT = 2
+    REQUEST_CHANGES = 3
 
 
 class Post(Base, TimestampMixin):
@@ -124,6 +125,6 @@ class Like(Base, TimestampMixin):
     post = relationship("Post", back_populates="likes")
 
     __table_args__ = (
-        # Один пользователь может поставить только один лайк на один пост
-        # (уникальный составной индекс)
+        # Уникальный индекс: один пользователь — один лайк на пост
+        # (не реализован в коде, но нужен в БД)
     )
