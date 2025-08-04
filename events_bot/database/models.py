@@ -12,9 +12,14 @@ from sqlalchemy import (
     BigInteger,
 )
 from sqlalchemy.orm import DeclarativeBase, mapped_column, relationship
-from sqlalchemy.orm import Mapped
 from typing import List, Optional
 import enum
+from datetime import datetime
+
+
+# Базовый класс
+class Base(DeclarativeBase):
+    pass
 
 
 # Enum для действий модерации
@@ -24,24 +29,7 @@ class ModerationAction(enum.Enum):
     REQUEST_CHANGES = 3
 
 
-# Базовый класс для моделей в стиле SQLAlchemy 2.0
-class Base(DeclarativeBase):
-    pass
-
-
-# Базовый класс с полями времени
-class TimestampMixin:
-    """Миксин для добавления полей времени создания и обновления"""
-
-    created_at: Mapped[DateTime] = mapped_column(
-        DateTime, default=func.now(), nullable=False
-    )
-    updated_at: Mapped[DateTime] = mapped_column(
-        DateTime, default=func.now(), onupdate=func.now(), nullable=False
-    )
-
-
-# Таблица связи многие-ко-многим для пользователей и категорий
+# Таблицы многие-ко-многим
 user_categories = Table(
     "user_categories",
     Base.metadata,
@@ -49,7 +37,6 @@ user_categories = Table(
     Column("category_id", ForeignKey("categories.id"), primary_key=True),
 )
 
-# Таблица связи многие-ко-многим для постов и категорий
 post_categories = Table(
     "post_categories",
     Base.metadata,
@@ -58,103 +45,85 @@ post_categories = Table(
 )
 
 
+class TimestampMixin:
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+
 class User(Base, TimestampMixin):
-    """Модель пользователя Telegram"""
-
     __tablename__ = "users"
-
-    id: Mapped[int] = mapped_column(
-        BigInteger(), primary_key=True
-    )  # ID пользователя в Telegram
-    username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    first_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    last_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    id = Column(BigInteger, primary_key=True)
+    username = Column(String(100), nullable=True)
+    first_name = Column(String(100), nullable=True)
+    last_name = Column(String(100), nullable=True)
+    city = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True)
+    is_moderator = Column(Boolean, default=False)
 
     # Связи
-    categories: Mapped[List["Category"]] = relationship(
-        secondary=user_categories, back_populates="users"
-    )
-    posts: Mapped[List["Post"]] = relationship(back_populates="author")
+    categories = relationship("Category", secondary=user_categories, back_populates="users")
+    posts = relationship("Post", back_populates="author")
+    likes = relationship("Like", back_populates="user")
 
 
 class Category(Base, TimestampMixin):
-    """Модель категории"""
-
     __tablename__ = "categories"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), unique=True, nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
 
     # Связи
-    users: Mapped[List[User]] = relationship(
-        secondary=user_categories, back_populates="categories"
-    )
-    posts: Mapped[List["Post"]] = relationship(
-        secondary=post_categories, back_populates="categories"
-    )
+    users = relationship("User", secondary=user_categories, back_populates="categories")
+    posts = relationship("Post", secondary=post_categories, back_populates="categories")
 
 
 class Post(Base, TimestampMixin):
-    """Модель поста"""
-
     __tablename__ = "posts"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    title: Mapped[str] = mapped_column(String(200), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    image_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    is_approved: Mapped[bool] = mapped_column(Boolean, default=False)
-    is_published: Mapped[bool] = mapped_column(Boolean, default=False)
-    published_at: Mapped[Optional[DateTime]] = mapped_column(DateTime, nullable=True)
+    id = Column(Integer, primary_key=True)
+    title = Column(String(200), nullable=False)
+    content = Column(Text, nullable=False)
+    author_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    city = Column(String(100), nullable=True)
+    image_id = Column(String(255), nullable=True)
+    is_approved = Column(Boolean, default=False)
+    is_published = Column(Boolean, default=False)
+    published_at = Column(DateTime, nullable=True)
+    
+    # Новое поле: дата и время события
+    event_datetime = Column(DateTime(timezone=True), nullable=True)
 
     # Связи
-    author: Mapped[User] = relationship(back_populates="posts")
-    categories: Mapped[List[Category]] = relationship(
-        secondary=post_categories, back_populates="posts"
-    )
-    moderation_records: Mapped[List["ModerationRecord"]] = relationship(
-        back_populates="post"
-    )
+    author = relationship("User", back_populates="posts")
+    categories = relationship("Category", secondary=post_categories, back_populates="posts")
+    moderation_records = relationship("ModerationRecord", back_populates="post")
+    likes = relationship("Like", back_populates="post", cascade="all, delete-orphan")
 
 
 class ModerationRecord(Base, TimestampMixin):
-    """Модель записи модерации"""
-
     __tablename__ = "moderation_records"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), nullable=False)
-    moderator_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    action: Mapped[ModerationAction] = mapped_column(
-        Enum(ModerationAction), nullable=False
-    )
-    comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    id = Column(Integer, primary_key=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)
+    moderator_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    action = Column(Enum(ModerationAction), nullable=False)
+    comment = Column(Text, nullable=True)
 
     # Связи
-    post: Mapped[Post] = relationship(back_populates="moderation_records")
-    moderator: Mapped[User] = relationship()
+    post = relationship("Post", back_populates="moderation_records")
+    moderator = relationship("User")
 
 
 class Like(Base, TimestampMixin):
-    """Модель лайка пользователя на пост"""
-
     __tablename__ = "likes"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)
 
     # Связи
-    user: Mapped[User] = relationship()
-    post: Mapped[Post] = relationship()
+    user = relationship("User", back_populates="likes")
+    post = relationship("Post", back_populates="likes")
 
-    # Уникальный индекс для предотвращения дублирования лайков
     __table_args__ = (
         # Один пользователь может поставить только один лайк на один пост
+        # (уникальный составной индекс)
     )
