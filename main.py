@@ -3,6 +3,7 @@
 
 import logfire
 logfire.configure(scrubbing=False)
+
 import asyncio
 import os
 
@@ -19,16 +20,17 @@ from events_bot.bot.handlers import (
     register_feed_handlers,
 )
 from events_bot.bot.middleware import DatabaseMiddleware
-from events_bot.tasks.cleanup import cleanup_expired_posts
 from loguru import logger
 
 logger.configure(handlers=[logfire.loguru_handler()])
 
+# Глобальные переменные для engine и sessionmaker
 engine = None
 sessionmaker = None
 
 
 async def main():
+    """Главная функция бота"""
     global engine, sessionmaker
 
     token = os.getenv("BOT_TOKEN")
@@ -36,19 +38,24 @@ async def main():
         logfire.error("❌ Error: BOT_TOKEN not set")
         return
 
+    # Создаём engine и sessionmaker один раз
     engine, sessionmaker = await create_async_engine_and_session()
     logfire.info("✅ Database engine и sessionmaker инициализированы")
 
+    # Инициализируем базу данных (создание таблиц и категорий)
     await init_database()
     logfire.info("✅ Database initialized")
 
+    # Создаем бота и диспетчер
     bot = Bot(token=token)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
 
+    # Передаём sessionmaker в middleware
     dp.message.middleware(DatabaseMiddleware(sessionmaker))
     dp.callback_query.middleware(DatabaseMiddleware(sessionmaker))
 
+    # Регистрируем обработчики
     register_start_handlers(dp)
     register_user_handlers(dp)
     register_post_handlers(dp)
@@ -58,17 +65,16 @@ async def main():
 
     logfire.info("🤖 Bot started...")
 
-    polling_task = asyncio.create_task(dp.start_polling(bot))
-    cleanup_task = asyncio.create_task(cleanup_expired_posts(bot, interval=3600))  # Каждый час
-
-    await asyncio.gather(polling_task, cleanup_task)
-
-    await bot.session.close()
-    if engine:
-        await engine.dispose()
-        logfire.info("🗑️ Database engine disposed")
+    try:
+        await dp.start_polling(bot)
+    except KeyboardInterrupt:
+        logfire.info("🛑 Bot stopped")
+    finally:
+        await bot.session.close()
+        if engine:
+            await engine.dispose()
+            logfire.info("🗑️ Database engine disposed")
 
 
 if __name__ == "__main__":
-    from events_bot.database.connection import create_async_engine_and_session
     asyncio.run(main())
