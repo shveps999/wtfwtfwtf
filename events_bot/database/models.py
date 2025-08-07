@@ -8,20 +8,11 @@ from sqlalchemy import (
     func,
     Column,
     Integer,
-    Enum,
     BigInteger,
 )
 from sqlalchemy.orm import DeclarativeBase, mapped_column, relationship
 from sqlalchemy.orm import Mapped
 from typing import List, Optional
-import enum
-
-
-# Enum для действий модерации
-class ModerationAction(enum.Enum):
-    APPROVE = 1
-    REJECT = 2
-    REQUEST_CHANGES = 3
 
 
 # Базовый класс для моделей в стиле SQLAlchemy 2.0
@@ -131,9 +122,7 @@ class ModerationRecord(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), nullable=False)
     moderator_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    action: Mapped[ModerationAction] = mapped_column(
-        Enum(ModerationAction), nullable=False
-    )
+    action: Mapped[str] = mapped_column(String(20), nullable=False)  # 'approve', 'reject', 'request_changes'
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Связи
