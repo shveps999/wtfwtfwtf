@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  # Telegram бот (продакшн)
+  bot:
+    build: .
+    container_name: events_bot
+    environment:
+      # Обязательные переменные
+      BOT_TOKEN: ${BOT_TOKEN}
+      
+      # База данных (внешняя)
+      DATABASE_URL: ${DATABASE_URL}
+      
+      # Логирование
+      LOGFIRE_TOKEN: ${LOGFIRE_TOKEN}
+
+      # Группа для модерации
+      MODERATION_GROUP_ID: ${MODERATION_GROUP_ID}
+      
+      # AWS S3 Configuration
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      
+      # Дополнительные настройки
+      ENVIRONMENT: production
+      DEBUG: "false"
