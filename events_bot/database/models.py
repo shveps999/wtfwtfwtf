@@ -14,7 +14,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, mapped_column, relationship
 from sqlalchemy.orm import Mapped
 from typing import List, Optional
-from enum import Enum
 
 
 # Базовый класс для моделей в стиле SQLAlchemy 2.0
@@ -151,9 +150,3 @@ class Like(Base, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("user_id", "post_id", name="uq_like_user_post"),
     )
-
-
-class ModerationAction(str, Enum):
-    APPROVE = "approve"
-    REJECT = "reject"
-    REQUEST_CHANGES = "request_changes"
