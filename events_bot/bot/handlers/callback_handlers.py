@@ -60,7 +60,7 @@ async def confirm_categories_selection(callback: CallbackQuery, state: FSMContex
 
     await callback.message.edit_text(
         f"✅ Выбраны категории: {category_names}\n\n"
-        "Теперь вы можете создавать посты в этих категориях."
+        "Теперь вы можете получать уведомления в этих категориях."
     )
 
     await callback.message.edit_text(
