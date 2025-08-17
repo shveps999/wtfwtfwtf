@@ -1,7 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
-from events_bot.database.services import UserService, CategoryService
+from events_bot.database.services import UserService, CategoryService, LikeService, NotificationService
 from events_bot.bot.states import UserStates
 from events_bot.bot.keyboards import get_category_selection_keyboard, get_main_keyboard
 
@@ -67,3 +67,29 @@ async def confirm_categories_selection(callback: CallbackQuery, state: FSMContex
         "Выберите действие:", reply_markup=get_main_keyboard()
     )
     await state.clear()
+
+
+@router.callback_query(F.data.startswith("like_post_"))
+async def handle_like_from_notification(callback: CallbackQuery, db):
+    """Обработка лайка из уведомления"""
+    try:
+        post_id = int(callback.data.split("_")[2])
+        user_id = callback.from_user.id
+
+        # Проверяем, есть ли уже лайк
+        is_liked = await LikeService.is_post_liked_by_user(db, user_id, post_id)
+
+        # Переключаем лайк
+        result = await LikeService.toggle_like(db, user_id, post_id)
+        action_text = "в избранное ❤️" if result["action"] == "added" else "из избранного ✅"
+
+        # Отправляем уведомление
+        await callback.answer(f"Пост {action_text}", show_alert=True)
+
+        # Обновляем кнопку
+        new_keyboard = NotificationService.get_like_keyboard(post_id, result["action"] == "added")
+        await callback.message.edit_reply_markup(reply_markup=new_keyboard)
+
+    except Exception as e:
+        logfire.error(f"Ошибка при лайке из уведомления: {e}")
+        await callback.answer("❌ Ошибка при добавлении в избранное", show_alert=True)
