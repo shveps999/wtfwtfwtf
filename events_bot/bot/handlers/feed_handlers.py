@@ -90,10 +90,10 @@ async def show_feed_page_cmd(message: Message, page: int, db):
     if not posts:
         logfire.info(f"Пользователь {message.from_user.id} — в ленте нет постов")
         await message.answer(
-            "📭 В ленте пока нет постов по вашим категориям.\n\n"
+            "📭 В ленте пока нет мероприятий по вашим категориям.\n\n"
             "Попробуйте:\n"
             "• Выбрать другие категории\n"
-            "• Создать пост самому",
+            "• Создать мероприятие самому",
             reply_markup=get_main_keyboard()
         )
         return
@@ -122,10 +122,10 @@ async def show_feed_page(callback: CallbackQuery, page: int, db):
         logfire.info(f"Пользователь {callback.from_user.id} — в ленте нет постов")
         try:
             await callback.message.edit_text(
-                "📭 В ленте пока нет постов по вашим категориям.\n\n"
+                "📭 В ленте пока нет мероприятий по вашим категориям.\n\n"
                 "Попробуйте:\n"
                 "• Выбрать другие категории\n"
-                "• Создать пост самому",
+                "• Создать мероприятие самому",
                 reply_markup=get_main_keyboard()
             )
         except TelegramBadRequest as e:
@@ -194,7 +194,7 @@ def format_post_for_feed(post, current_position: int, total_posts: int, likes_co
 
 def format_feed_list(posts, current_position_start: int, total_posts: int) -> str:
     """Формат списка кратких карточек 4-5 постов"""
-    lines = ["📰 Лента постов (кратко)", ""]
+    lines = ["Для тебя найдены следующие актуальные события:", ""]
     for idx, post in enumerate(posts, start=current_position_start):
         category_names = [getattr(cat, 'name', 'Неизвестно') for cat in (post.categories or [])]
         category_str = ', '.join(category_names) if category_names else 'Неизвестно'
@@ -330,7 +330,7 @@ async def handle_liked_navigation(callback: CallbackQuery, db):
 async def show_liked_page(callback: CallbackQuery, page: int, db):
     posts = await PostService.get_liked_posts(db, callback.from_user.id, POSTS_PER_PAGE, page * POSTS_PER_PAGE)
     if not posts:
-        await callback.message.edit_text("📭 У вас пока нет избранных постов", reply_markup=get_main_keyboard())
+        await callback.message.edit_text("📭 У вас пока нет избранных событий", reply_markup=get_main_keyboard())
         return
     total_posts = await PostService.get_liked_posts_count(db, callback.from_user.id)
     total_pages = (total_posts + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE
