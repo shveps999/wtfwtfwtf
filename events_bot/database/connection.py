@@ -6,34 +6,56 @@ from logfire import instrument_sqlalchemy
 
 
 def get_database_url():
-    """Получает URL базы данных из переменных окружения или использует SQLite по умолчанию"""
+    """Получает URL базы данных из переменных окружения"""
     database_url = os.getenv("DATABASE_URL")
 
-    # Если указан TEST_MODE, используем временную базу в памяти
+    if not database_url:
+        raise ValueError("DATABASE_URL не установлен в переменных окружения")
 
-    if database_url:
-        # Преобразуем синхронный URL в асинхронный
-        if database_url.startswith("postgresql://"):
-            return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        elif database_url.startswith("mysql://"):
-            return database_url.replace("mysql://", "mysql+aiomysql://", 1)
-        else:
-            return database_url
+    # Преобразуем синхронный URL в асинхронный
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif database_url.startswith("mysql://"):
+        return database_url.replace("mysql://", "mysql+aiomysql://", 1)
+    elif database_url.startswith("sqlite:///"):
+        return database_url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+    
+    return database_url
 
-        
-already_instrumented = False
+
+# Глобальный флаг для инструментирования
+_already_instrumented = False
+
 
 def create_async_engine_and_session():
-    """Создает асинхронный движок базы данных и сессию"""
+    """Создает асинхронный движок базы данных и фабрику сессий"""
     database_url = get_database_url()
-    engine = create_async_engine(database_url, echo=True)
-    session_maker = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
+
+    # Настройка движка с оптимальными параметрами
+    engine = create_async_engine(
+        database_url,
+        echo=False,              # Отключено для продакшена
+        pool_pre_ping=True,      # Проверка соединения перед использованием
+        pool_recycle=300,        # Пересоздание соединений каждые 5 минут
+        pool_size=10,            # Основной пул соединений
+        max_overflow=20,         # Максимум временных соединений
+        pool_timeout=15,         # Таймаут ожидания соединения
     )
-    global already_instrumented
-    if not already_instrumented:
+
+    # Создание фабрики сессий
+    session_maker = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+
+    # Инструментирование SQL-запросов (один раз)
+    global _already_instrumented
+    if not _already_instrumented:
         instrument_sqlalchemy(engine)
-        already_instrumented = True
+        _already_instrumented = True
+
     return engine, session_maker
 
 
@@ -45,17 +67,20 @@ async def create_tables(engine):
 
 async def get_db():
     """Асинхронный генератор для получения сессии базы данных"""
-    engine, session_maker = create_async_engine_and_session()
+    _, session_maker = create_async_engine_and_session()
     async with session_maker() as session:
         try:
             yield session
+        except Exception as e:
+            await session.rollback()
+            raise
         finally:
             await session.close()
 
 
-# Для обратной совместимости (если нужно)
+# Для обратной совместимости
 def create_engine_and_session():
-    """Синхронная версия для обратной совместимости"""
+    """Синхронная версия (не используется в продакшене)"""
     raise NotImplementedError(
         "Используйте create_async_engine_and_session() для асинхронной работы"
     )
