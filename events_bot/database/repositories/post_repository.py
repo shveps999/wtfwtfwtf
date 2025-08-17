@@ -132,21 +132,23 @@ class PostRepository:
         
         category_ids = [cat.id for cat in user.categories]
         
-        # Получаем посты по категориям пользователя, исключая его собственные
+        # Подзапрос: посты, связанные с категориями пользователя
+        from ..models import post_categories as pc
+        subq = select(pc.c.post_id).where(pc.c.category_id.in_(category_ids)).subquery()
+
+        # Основной запрос: посты в этих категориях
         now_utc = func.now()
         result = await db.execute(
             select(Post)
-            .join(Post.categories)
             .where(
                 and_(
-                    Category.id.in_(category_ids),
+                    Post.id.in_(subq),
                     Post.author_id != user_id,
                     Post.is_approved == True,
                     Post.is_published == True,
                     or_(Post.event_at.is_(None), Post.event_at > now_utc),
                 )
             )
-            .distinct(Post.id)
             .options(selectinload(Post.author), selectinload(Post.categories))
             .order_by(Post.published_at.desc())
             .limit(limit)
@@ -169,13 +171,15 @@ class PostRepository:
         
         category_ids = [cat.id for cat in user.categories]
         
-        # Подсчитываем количество постов
+        # Подзапрос: посты в категориях пользователя
+        from ..models import post_categories as pc
+        subq = select(pc.c.post_id).where(pc.c.category_id.in_(category_ids)).subquery()
+
+        # Считаем количество уникальных постов
         result = await db.execute(
-            select(func.count(func.distinct(Post.id)))
-            .join(Post.categories)
-            .where(
+            select(func.count(Post.id)).where(
                 and_(
-                    Category.id.in_(category_ids),
+                    Post.id.in_(subq),
                     Post.author_id != user_id,
                     Post.is_approved == True,
                     Post.is_published == True,
