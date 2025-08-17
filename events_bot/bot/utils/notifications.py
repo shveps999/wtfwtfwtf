@@ -3,17 +3,24 @@ from typing import List
 from events_bot.database.models import User, Post
 from events_bot.database.services import NotificationService
 from events_bot.storage import file_storage
-from aiogram.types import FSInputFile, InputMediaPhoto
+from aiogram.types import InputMediaPhoto
 import logfire
 
 
 async def send_post_notification(bot: Bot, post: Post, users: List[User], db) -> None:
-    """Отправить уведомления о новом посте"""
+    """
+    Отправить уведомления о новом посте с кнопкой лайка
+    """
     logfire.info(f"Отправляем уведомления о посте {post.id} {len(users)} пользователям")
     
     # Загружаем связанные объекты
     await db.refresh(post, attribute_names=["author", "categories"])
+    
+    # Форматируем текст уведомления
     notification_text = NotificationService.format_post_notification(post)
+    
+    # Создаём клавиатуру с кнопкой лайка
+    keyboard = NotificationService.get_like_keyboard(post.id, liked=False)
 
     success_count = 0
     error_count = 0
@@ -30,16 +37,28 @@ async def send_post_notification(bot: Bot, post: Post, users: List[User], db) ->
                     await bot.send_photo(
                         chat_id=user.id,
                         photo=media_photo.media,
-                        caption=notification_text
+                        caption=notification_text,
+                        reply_markup=keyboard,
+                        parse_mode="HTML"
                     )
                 else:
                     # Если файл не найден, отправляем только текст
                     logfire.warning(f"Изображение для поста {post.id} не найдено, отправляем только текст")
-                    await bot.send_message(chat_id=user.id, text=notification_text)
+                    await bot.send_message(
+                        chat_id=user.id,
+                        text=notification_text,
+                        reply_markup=keyboard,
+                        parse_mode="HTML"
+                    )
             else:
                 # Если нет изображения, отправляем только текст
                 logfire.debug(f"Отправляем уведомление без изображения пользователю {user.id}")
-                await bot.send_message(chat_id=user.id, text=notification_text)
+                await bot.send_message(
+                    chat_id=user.id,
+                    text=notification_text,
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
             
             success_count += 1
             logfire.debug(f"Уведомление успешно отправлено пользователю {user.id}")
