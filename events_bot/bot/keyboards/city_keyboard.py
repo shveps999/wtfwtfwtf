@@ -5,9 +5,9 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 def get_city_keyboard(for_post: bool = False) -> InlineKeyboardMarkup:
     """Инлайн-клавиатура для выбора города"""
     cities = [
-        "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург",
-        "Казань", "Нижний Новгород", "Челябинск", "Самара",
-        "Уфа", "Ростов-на-Дону"
+        "СПбГУ", "ПГУПС", "СПбПУ", "ИТМО",
+        "СПбГЭУ", "Горный", "РГПУ", "СПбГМТУ",
+        "СПбГАСУ", "Военмех"
     ]
     builder = InlineKeyboardBuilder()
     
