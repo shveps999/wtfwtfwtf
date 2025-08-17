@@ -3,7 +3,7 @@ from sqlalchemy import select, and_, func, insert, or_
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from datetime import datetime
-from ..models import Post, ModerationRecord, ModerationAction, Category, post_categories
+from ..models import Post, ModerationRecord, Category, post_categories
 from ..models import User
 
 
@@ -33,7 +33,7 @@ class PostRepository:
         db.add(post)
         await db.commit()
         
-        # Добавляем категории к посту в отдельной транзакции
+        # Добавляем категории к посту
         await db.execute(
             insert(post_categories).values(
                 [{'post_id': post.id, 'category_id': category} for category in category_ids]
@@ -76,7 +76,7 @@ class PostRepository:
             .join(Post.categories)
             .where(
                 and_(
-                    Post.categories.any(Category.id.in_(category_ids)),
+                    Category.id.in_(category_ids),
                     Post.is_approved == True,
                     Post.is_published == True,
                     (Post.event_at.is_(None) | (Post.event_at > func.now())),
@@ -85,65 +85,6 @@ class PostRepository:
             .options(selectinload(Post.author), selectinload(Post.categories))
         )
         return result.scalars().all()
-
-    @staticmethod
-    async def approve_post(
-        db: AsyncSession, post_id: int, moderator_id: int, comment: str = None
-    ) -> Post:
-        result = await db.execute(select(Post).where(Post.id == post_id))
-        post = result.scalar_one_or_none()
-        if post:
-            post.is_approved = True
-            post.is_published = True
-            post.published_at = func.now()
-            moderation_record = ModerationRecord(
-                post_id=post_id,
-                moderator_id=moderator_id,
-                action=ModerationAction.APPROVE,
-                comment=comment,
-            )
-            db.add(moderation_record)
-            await db.commit()
-            await db.refresh(post)
-        return post
-
-    @staticmethod
-    async def reject_post(
-        db: AsyncSession, post_id: int, moderator_id: int, comment: str = None
-    ) -> Post:
-        result = await db.execute(select(Post).where(Post.id == post_id))
-        post = result.scalar_one_or_none()
-        if post:
-            post.is_approved = False
-            post.is_published = False
-            moderation_record = ModerationRecord(
-                post_id=post_id,
-                moderator_id=moderator_id,
-                action=ModerationAction.REJECT,
-                comment=comment,
-            )
-            db.add(moderation_record)
-            await db.commit()
-            await db.refresh(post)
-        return post
-
-    @staticmethod
-    async def request_changes(
-        db: AsyncSession, post_id: int, moderator_id: int, comment: str = None
-    ) -> Post:
-        result = await db.execute(select(Post).where(Post.id == post_id))
-        post = result.scalar_one_or_none()
-        if post:
-            moderation_record = ModerationRecord(
-                post_id=post_id,
-                moderator_id=moderator_id,
-                action=ModerationAction.REQUEST_CHANGES,
-                comment=comment,
-            )
-            db.add(moderation_record)
-            await db.commit()
-            await db.refresh(post)
-        return post
 
     @staticmethod
     async def get_user_posts(db: AsyncSession, user_id: int) -> List[Post]:
@@ -195,15 +136,17 @@ class PostRepository:
         now_utc = func.now()
         result = await db.execute(
             select(Post)
-            .join(Post.categories)
             .where(
                 and_(
-                    Post.categories.any(Category.id.in_(category_ids)),
+                    Post.author_id != user_id,
                     Post.is_approved == True,
                     Post.is_published == True,
                     or_(Post.event_at.is_(None), Post.event_at > now_utc),
                 )
             )
+            .join(Post.categories)
+            .where(Category.id.in_(category_ids))
+            .distinct(Post.id)
             .options(selectinload(Post.author), selectinload(Post.categories))
             .order_by(Post.published_at.desc())
             .limit(limit)
@@ -228,11 +171,12 @@ class PostRepository:
         
         # Подсчитываем количество постов
         result = await db.execute(
-            select(func.count(Post.id))
+            select(func.count(func.distinct(Post.id)))
             .join(Post.categories)
             .where(
                 and_(
-                    Post.categories.any(Category.id.in_(category_ids)),
+                    Category.id.in_(category_ids),
+                    Post.author_id != user_id,
                     Post.is_approved == True,
                     Post.is_published == True,
                     or_(Post.event_at.is_(None), Post.event_at > func.now()),
@@ -283,28 +227,23 @@ class PostRepository:
 
     @staticmethod
     async def delete_expired_posts(db: AsyncSession) -> int:
-        """Удалить посты, у которых наступило event_at, вместе со связями"""
         from ..models import Like, ModerationRecord
-        # Ищем просроченные посты
         expired_posts = await db.execute(
             select(Post.id).where(Post.event_at.is_not(None), Post.event_at <= func.now())
         )
         post_ids = [pid for pid in expired_posts.scalars().all()]
         if not post_ids:
             return 0
-        # Удаляем связанные лайки
+
         await db.execute(
             Like.__table__.delete().where(Like.post_id.in_(post_ids))
         )
-        # Удаляем записи модерации
         await db.execute(
             ModerationRecord.__table__.delete().where(ModerationRecord.post_id.in_(post_ids))
         )
-        # Удаляем связи постов с категориями
         await db.execute(
             post_categories.delete().where(post_categories.c.post_id.in_(post_ids))
         )
-        # Удаляем сами посты
         result = await db.execute(
             Post.__table__.delete().where(Post.id.in_(post_ids))
         )
@@ -313,7 +252,6 @@ class PostRepository:
 
     @staticmethod
     async def get_expired_posts_info(db: AsyncSession) -> list[dict]:
-        """Вернуть информацию о просроченных постах (id, image_id)"""
         result = await db.execute(
             select(Post.id, Post.image_id).where(
                 and_(Post.event_at.is_not(None), Post.event_at <= func.now())
