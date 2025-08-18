@@ -23,6 +23,7 @@ class PostService:
         category_ids: List[int],
         city: str | None = None,
         image_id: str | None = None,
+        link: str | None = None,
         event_at: str | None = None,
     ) -> Post:
         """Создать новый пост"""
@@ -37,7 +38,7 @@ class PostService:
             except Exception:
                 parsed_event_at = None
         return await PostRepository.create_post(
-            db, title, content, author_id, category_ids, city, image_id, parsed_event_at
+            db, title, content, author_id, category_ids, city, image_id, link, parsed_event_at
         )
 
     @staticmethod
@@ -49,6 +50,7 @@ class PostService:
         category_ids: List[int],
         city: str | None = None,
         image_id: str | None = None,
+        link: str | None = None,
         event_at: str | None = None,
         bot=None,
     ) -> Post:
@@ -64,7 +66,7 @@ class PostService:
             except Exception:
                 parsed_event_at = None
         post = await PostRepository.create_post(
-            db, title, content, author_id, category_ids, city, image_id, parsed_event_at
+            db, title, content, author_id, category_ids, city, image_id, link, parsed_event_at
         )
         
         # Отправляем на модерацию
