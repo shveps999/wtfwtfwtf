@@ -11,3 +11,4 @@ class PostStates(StatesGroup):
     waiting_for_content = State()
     waiting_for_image = State()
     waiting_for_event_datetime = State()
+    waiting_for_link = State()  # Новое состояние для ввода ссылки
