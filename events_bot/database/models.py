@@ -102,10 +102,10 @@ class Post(Base, TimestampMixin):
     author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     image_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    link: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     is_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     is_published: Mapped[bool] = mapped_column(Boolean, default=False)
     published_at: Mapped[Optional[DateTime]] = mapped_column(DateTime, nullable=True)
-    # Дата и время события/актуальности поста. После наступления этого времени пост скрывается и удаляется
     event_at: Mapped[Optional[DateTime]] = mapped_column(DateTime, nullable=True)
 
     # Связи
