@@ -9,8 +9,7 @@ from events_bot.bot.keyboards import (
     get_main_keyboard,
     get_category_selection_keyboard,
     get_city_keyboard,
-    get_skip_image_keyboard,
-    get_skip_link_keyboard,
+    get_skip_link_keyboard,  # ← Новая клавиатура
 )
 from events_bot.storage import file_storage
 from loguru import logger
@@ -26,10 +25,7 @@ def register_post_handlers(dp: Router):
 @router.message(F.text == "/create_post")
 async def cmd_create_post(message: Message, state: FSMContext, db):
     """Обработчик команды /create_post"""
-    # Устанавливаем начальное состояние создания поста
     await state.set_state(PostStates.creating_post)
-    
-    # Сначала предлагаем выбрать город
     await message.answer(
         "🏙️ Выберите город для поста:",
         reply_markup=get_city_keyboard(for_post=True)
@@ -51,10 +47,7 @@ async def cmd_cancel_post(message: Message, state: FSMContext, db):
 @router.callback_query(F.data == "create_post")
 async def start_create_post(callback: CallbackQuery, state: FSMContext, db):
     """Начать создание поста через инлайн-кнопку"""
-    # Устанавливаем начальное состояние создания поста
     await state.set_state(PostStates.creating_post)
-    
-    # Сначала предлагаем выбрать город
     await callback.message.edit_text(
         "🏙️ Выберите город для поста:",
         reply_markup=get_city_keyboard(for_post=True)
@@ -77,14 +70,9 @@ async def cancel_post_creation(callback: CallbackQuery, state: FSMContext, db):
 @router.callback_query(PostStates.waiting_for_city_selection, F.data.startswith("post_city_"))
 async def process_post_city_selection(callback: CallbackQuery, state: FSMContext, db):
     """Обработка выбора города для поста"""
-    city = callback.data[10:]  # Убираем префикс "post_city_"
-
-    # Сохраняем выбранный город
+    city = callback.data[10:]
     await state.update_data(post_city=city)
-    
-    # Получаем все категории для выбора
     all_categories = await CategoryService.get_all_categories(db)
-    
     await callback.message.edit_text(
         f"🏙️ Город {city} выбран!\n\n📂 Теперь выберите категории для поста:",
         reply_markup=get_category_selection_keyboard(all_categories, for_post=True)
@@ -96,7 +84,7 @@ async def process_post_city_selection(callback: CallbackQuery, state: FSMContext
 @router.callback_query(PostStates.waiting_for_category_selection, F.data.startswith("post_category_"))
 async def process_post_category_selection(callback: CallbackQuery, state: FSMContext, db):
     """Мультивыбор категорий для поста"""
-    category_id = int(callback.data.split("_")[2])  # post_category_123 -> 123
+    category_id = int(callback.data.split("_")[2])
     data = await state.get_data()
     category_ids = data.get("category_ids", [])
 
@@ -106,7 +94,6 @@ async def process_post_category_selection(callback: CallbackQuery, state: FSMCon
         category_ids.append(category_id)
     await state.update_data(category_ids=category_ids)
 
-    # Получаем все категории для выбора
     all_categories = await CategoryService.get_all_categories(db)
     await callback.message.edit_text(
         "📂 Выберите одну или несколько категорий для поста (можно выбрать несколько):",
@@ -148,7 +135,7 @@ async def process_post_title(message: Message, state: FSMContext, db):
     logfire.info(f"Заголовок сохранен в состоянии: {message.text}")
     await message.answer("📄 Введите содержание поста:")
     await state.set_state(PostStates.waiting_for_content)
-    logfire.info(f"Состояние изменено на waiting_for_content для пользователя {message.from_user.id}")
+    logfire.info(f"Состояние изменено на waiting_for_content для пользователя {callback.from_user.id}")
 
 
 @router.message(PostStates.waiting_for_content)
@@ -160,10 +147,41 @@ async def process_post_content(message: Message, state: FSMContext, db):
 
     await state.update_data(content=message.text)
     await message.answer(
-        "⏰ Введите дату и время события в формате ДД.ММ.ГГГГ ЧЧ:ММ (например, 25.12.2025 18:30):\n"
-        "После наступления этого времени пост будет скрыт из ленты и удалён."
+        "🔗 Отправьте ссылку на мероприятие (например, на сайт, билеты и т.п.)\n"
+        "Или нажмите кнопку ниже, чтобы пропустить:",
+        reply_markup=get_skip_link_keyboard()
     )
-    await state.set_state(PostStates.waiting_for_event_datetime)
+    await state.set_state(PostStates.waiting_for_link)
+
+
+@router.callback_query(PostStates.waiting_for_link, F.data == "skip_link")
+async def skip_link(callback: CallbackQuery, state: FSMContext):
+    """Пропустить ввод ссылки"""
+    await state.update_data(link=None)
+    await callback.message.edit_text("🖼️ Отправьте изображение для поста (или нажмите /skip для пропуска):")
+    await callback.message.edit_reply_markup(reply_markup=get_skip_image_keyboard())
+    await state.set_state(PostStates.waiting_for_image)
+    await callback.answer()
+
+
+@router.message(PostStates.waiting_for_link)
+async def process_post_link(message: Message, state: FSMContext):
+    """Обработка ссылки поста"""
+    link = message.text.strip()
+    if not (link.startswith("http://") or link.startswith("https://")):
+        await message.answer(
+            "❌ Ссылка должна начинаться с `http://` или `https://`\n"
+            "Пожалуйста, введите корректную ссылку или нажмите /skip",
+            reply_markup=get_skip_link_keyboard()
+        )
+        return
+    
+    await state.update_data(link=link)
+    await message.answer(
+        "🖼️ Отправьте изображение для поста (или нажмите /skip для пропуска):",
+        reply_markup=get_skip_image_keyboard()
+    )
+    await state.set_state(PostStates.waiting_for_image)
 
 
 @router.message(PostStates.waiting_for_event_datetime)
@@ -178,16 +196,13 @@ async def process_event_datetime(message: Message, state: FSMContext, db):
     for fmt in ("%d.%m.%Y %H:%M", "%d.%m.%Y %H.%M"):
         try:
             event_dt = datetime.strptime(text, fmt)
-            # Считаем введённое время в часовом поясе МСК
             if ZoneInfo is not None:
                 msk = ZoneInfo("Europe/Moscow")
                 utc = ZoneInfo("UTC")
                 event_dt = event_dt.replace(tzinfo=msk).astimezone(utc)
-            # Сохраняем в ISO (с таймзоной +00:00)
             await state.update_data(event_at=event_dt.isoformat())
             await message.answer(
-                "🖼️ Отправьте изображение для поста (или нажмите /skip для пропуска):",
-                reply_markup=get_skip_image_keyboard()
+                "🖼️ Отправьте изображение для поста (или нажмите /skip для пропуска):"
             )
             await state.set_state(PostStates.waiting_for_image)
             return
@@ -200,72 +215,29 @@ async def process_event_datetime(message: Message, state: FSMContext, db):
 async def process_post_image(message: Message, state: FSMContext, db):
     """Обработка изображения поста"""
     if message.text == "/skip":
-        await state.set_state(PostStates.waiting_for_link)
-        await message.answer(
-            "🔗 Введите ссылку, связанную с постом (или нажмите /skip для пропуска):",
-            reply_markup=get_skip_link_keyboard()
-        )
+        await continue_post_creation(message, state, db)
         return
 
     if not message.photo:
-        await message.answer("❌ Пожалуйста, отправьте изображение или нажмите /skip", reply_markup=get_skip_image_keyboard())
+        await message.answer("❌ Пожалуйста, отправьте изображение или нажмите /skip")
         return
 
-    # Получаем самое большое изображение
     photo = message.photo[-1]
-    
-    # Скачиваем файл
     file_info = await message.bot.get_file(photo.file_id)
     file_data = await message.bot.download_file(file_info.file_path)
-    
-    # Сохраняем файл
     file_id = await file_storage.save_file(file_data.read(), 'jpg')
     
     await state.update_data(image_id=file_id)
-    await state.set_state(PostStates.waiting_for_link)
-    await message.answer(
-        "🔗 Введите ссылку, связанную с постом (или нажмите /skip для пропуска):",
-        reply_markup=get_skip_link_keyboard()
-    )
+    await continue_post_creation(message, state, db)
 
 
 @router.callback_query(PostStates.waiting_for_image, F.data == "skip_image")
 async def skip_image_callback(callback: CallbackQuery, state: FSMContext, db):
-    """Пропуск загрузки изображения"""
-    await state.set_state(PostStates.waiting_for_link)
-    await callback.message.answer(
-        "🔗 Введите ссылку, связанную с постом (или нажмите /skip для пропуска):",
-        reply_markup=get_skip_link_keyboard()
-    )
-    await callback.answer()
-
-
-@router.message(PostStates.waiting_for_link)
-async def process_post_link(message: Message, state: FSMContext, db):
-    """Обработка ссылки поста"""
-    if message.text == "/skip":
-        await continue_post_creation(message, state, db)
-        return
-
-    # Простая проверка URL
-    text = message.text.strip()
-    if not (text.startswith('http://') or text.startswith('https://')):
-        await message.answer("❌ Пожалуйста, введите корректную ссылку (начинающуюся с http:// или https://) или нажмите /skip", 
-                           reply_markup=get_skip_link_keyboard())
-        return
-
-    await state.update_data(link=text)
-    await continue_post_creation(message, state, db)
-
-
-@router.callback_query(PostStates.waiting_for_link, F.data == "skip_link")
-async def skip_link_callback(callback: CallbackQuery, state: FSMContext, db):
-    """Пропуск ввода ссылки"""
     await continue_post_creation(callback, state, db)
 
 
 async def continue_post_creation(callback_or_message: Union[Message, CallbackQuery], state: FSMContext, db):
-    """Продолжение создания поста после загрузки изображения или ссылки"""
+    """Продолжение создания поста после загрузки изображения"""
     user_id = callback_or_message.from_user.id
     message = callback_or_message if isinstance(callback_or_message, Message) else callback_or_message.message
     data = await state.get_data()
@@ -274,8 +246,8 @@ async def continue_post_creation(callback_or_message: Union[Message, CallbackQue
     category_ids = data.get("category_ids", [])
     post_city = data.get("post_city")
     image_id = data.get("image_id")
-    link = data.get("link")
     event_at_iso = data.get("event_at")
+    link = data.get("link")  # ← Получаем ссылку
 
     if not all([title, content, category_ids, post_city]):
         await message.answer(
@@ -285,7 +257,6 @@ async def continue_post_creation(callback_or_message: Union[Message, CallbackQue
         await state.clear()
         return
 
-    # Создаем один пост с несколькими категориями
     post = await PostService.create_post_and_send_to_moderation(
         db=db,
         title=title,
@@ -294,8 +265,8 @@ async def continue_post_creation(callback_or_message: Union[Message, CallbackQue
         category_ids=category_ids,
         city=post_city,
         image_id=image_id,
-        link=link,
         event_at=event_at_iso,
+        link=link,  # ← Передаём ссылку
         bot=message.bot
     )
 
