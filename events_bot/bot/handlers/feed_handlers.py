@@ -10,7 +10,6 @@ from events_bot.bot.keyboards.feed_keyboard import (
     get_liked_list_keyboard,
     get_liked_post_keyboard,
 )
-from events_bot.bot.keyboards.link_keyboard import get_post_link_keyboard
 from events_bot.storage import file_storage
 import logfire
 from datetime import timezone
@@ -84,7 +83,6 @@ async def return_to_main_menu(callback: CallbackQuery):
 async def show_feed_page_cmd(message: Message, page: int, db):
     """Показать страницу ленты через сообщение"""
     logfire.info(f"Пользователь {message.from_user.id} загружает страницу {page} ленты")
-    # Получаем посты для ленты
     posts = await PostService.get_feed_posts(
         db, message.from_user.id, POSTS_PER_PAGE, page * POSTS_PER_PAGE
     )
@@ -98,10 +96,8 @@ async def show_feed_page_cmd(message: Message, page: int, db):
             reply_markup=get_main_keyboard()
         )
         return
-    # Получаем общее количество постов для пагинации
     total_posts = await PostService.get_feed_posts_count(db, message.from_user.id)
     total_pages = (total_posts + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE
-    # Список кратких карточек (предварительно загрузим категории)
     for post in posts:
         await db.refresh(post, attribute_names=["categories"])
     preview_text = format_feed_list(posts, page * POSTS_PER_PAGE + 1, total_posts)
@@ -115,7 +111,6 @@ async def show_feed_page_cmd(message: Message, page: int, db):
 async def show_feed_page(callback: CallbackQuery, page: int, db):
     """Показать страницу ленты"""
     logfire.info(f"Пользователь {callback.from_user.id} загружает страницу {page} ленты")
-    # Получаем посты для ленты
     posts = await PostService.get_feed_posts(
         db, callback.from_user.id, POSTS_PER_PAGE, page * POSTS_PER_PAGE
     )
@@ -135,7 +130,6 @@ async def show_feed_page(callback: CallbackQuery, page: int, db):
             else:
                 raise
         return
-    # Получаем общее количество постов для пагинации
     total_posts = await PostService.get_feed_posts_count(db, callback.from_user.id)
     total_pages = (total_posts + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE
     for post in posts:
@@ -149,7 +143,6 @@ async def show_feed_page(callback: CallbackQuery, page: int, db):
         )
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            # Игнорируем попытку редактировать без изменений
             pass
         else:
             raise
@@ -158,7 +151,6 @@ async def show_feed_page(callback: CallbackQuery, page: int, db):
 def _msk_str(dt) -> str:
     if not dt:
         return ""
-    # event_at хранится как наивное UTC; при показе переводим в МСК
     try:
         msk = ZoneInfo("Europe/Moscow") if ZoneInfo else None
     except Exception:
@@ -180,7 +172,6 @@ def format_post_for_feed(post, current_position: int, total_posts: int, likes_co
     post_city = getattr(post, 'city', 'Не указан')
     event_at = getattr(post, 'event_at', None)
     event_str = _msk_str(event_at)
-    link_text = "\n🔗 Ссылка: есть" if getattr(post, 'link', None) else ""
     return (
         f"📰 Пост\n\n"
         f"📝 <b>{post.title}</b>\n\n"
@@ -189,7 +180,7 @@ def format_post_for_feed(post, current_position: int, total_posts: int, likes_co
         f"🏙️ Город: {post_city}\n"
         f"📂 Категории: {category_str}\n"
         f"📅 Актуально до: {event_str}\n"
-        f"💖 Сердечек: {likes_count}{link_text}\n\n"
+        f"💖 Сердечек: {likes_count}\n\n"
         f"📊 {current_position} из {total_posts} постов"
     )
 
@@ -216,10 +207,7 @@ async def handle_post_heart(callback: CallbackQuery, post_id: int, db, data):
     logfire.info(f"Пользователь {callback.from_user.id} нажал на сердечко посту {post_id}")
     
     try:
-        # Переключаем лайк в БД
         result = await LikeService.toggle_like(db, callback.from_user.id, post_id)
-        
-        # Формируем сообщение для пользователя
         action_text = "добавлено" if result["action"] == "added" else "удалено"
         likes_count = result["likes_count"]
         
@@ -228,13 +216,12 @@ async def handle_post_heart(callback: CallbackQuery, post_id: int, db, data):
         
         await callback.answer(response_text, show_alert=True)
         
-        # Обновляем клавиатуру с новым количеством лайков
         is_liked = await LikeService.is_post_liked_by_user(db, callback.from_user.id, post_id)
         
         current_page = int(data[3])
         total_pages = int(data[4])
-        # Выбираем правильную клавиатуру для текущего раздела (лента или избранное)
         section = data[0]
+        
         if section == "liked":
             new_keyboard = get_liked_post_keyboard(
                 current_page=current_page,
@@ -250,6 +237,7 @@ async def handle_post_heart(callback: CallbackQuery, post_id: int, db, data):
                 post_id=post_id,
                 is_liked=is_liked,
                 likes_count=likes_count,
+                link=post.link  # ← Передаём ссылку
             )
         await callback.message.edit_reply_markup(reply_markup=new_keyboard)
         
@@ -270,20 +258,20 @@ async def show_post_details(callback: CallbackQuery, post_id: int, current_page:
     likes_count = await LikeService.get_post_likes_count(db, post.id)
     text = format_post_for_feed(post, current_page + 1, await PostService.get_feed_posts_count(db, callback.from_user.id), likes_count)
     
-    # Создаем клавиатуру с кнопкой ссылки, если она есть
-    reply_markup = get_feed_post_keyboard(current_page, total_pages, post.id, is_liked, likes_count)
-    if post.link:
-        link_keyboard = get_post_link_keyboard(post.link)
-        # Объединяем клавиатуры
-        reply_markup.inline_keyboard.extend(link_keyboard.inline_keyboard)
-    
     if post.image_id:
         media_photo = await file_storage.get_media_photo(post.image_id)
         if media_photo:
             try:
                 await callback.message.edit_media(
                     media=InputMediaPhoto(media=media_photo.media, caption=text, parse_mode="HTML"),
-                    reply_markup=reply_markup,
+                    reply_markup=get_feed_post_keyboard(
+                        current_page, 
+                        total_pages, 
+                        post.id, 
+                        is_liked, 
+                        likes_count, 
+                        post.link  # ← Передаём ссылку
+                    ),
                 )
             except TelegramBadRequest as e:
                 if "message is not modified" in str(e):
@@ -294,7 +282,14 @@ async def show_post_details(callback: CallbackQuery, post_id: int, current_page:
     try:
         await callback.message.edit_text(
             text,
-            reply_markup=reply_markup,
+            reply_markup=get_feed_post_keyboard(
+                current_page, 
+                total_pages, 
+                post.id, 
+                is_liked, 
+                likes_count, 
+                post.link  # ← Передаём ссылку
+            ),
             parse_mode="HTML",
         )
     except TelegramBadRequest as e:
@@ -364,20 +359,20 @@ async def show_liked_post_details(callback: CallbackQuery, post_id: int, current
     likes_count = await LikeService.get_post_likes_count(db, post.id)
     text = format_post_for_feed(post, current_page + 1, await PostService.get_liked_posts_count(db, callback.from_user.id), likes_count)
     
-    # Создаем клавиатуру с кнопкой ссылки, если она есть
-    reply_markup = get_liked_post_keyboard(current_page, total_pages, post.id, is_liked, likes_count)
-    if post.link:
-        link_keyboard = get_post_link_keyboard(post.link)
-        # Объединяем клавиатуры
-        reply_markup.inline_keyboard.extend(link_keyboard.inline_keyboard)
-    
     if post.image_id:
         media_photo = await file_storage.get_media_photo(post.image_id)
         if media_photo:
             try:
                 await callback.message.edit_media(
                     media=InputMediaPhoto(media=media_photo.media, caption=text, parse_mode="HTML"),
-                    reply_markup=reply_markup,
+                    reply_markup=get_liked_post_keyboard(
+                        current_page, 
+                        total_pages, 
+                        post.id, 
+                        is_liked, 
+                        likes_count, 
+                        post.link  # ← Передаём ссылку
+                    ),
                 )
             except TelegramBadRequest as e:
                 if "message is not modified" in str(e):
@@ -388,7 +383,14 @@ async def show_liked_post_details(callback: CallbackQuery, post_id: int, current
     try:
         await callback.message.edit_text(
             text,
-            reply_markup=reply_markup,
+            reply_markup=get_liked_post_keyboard(
+                current_page, 
+                total_pages, 
+                post.id, 
+                is_liked, 
+                likes_count, 
+                post.link  # ← Передаём ссылку
+            ),
             parse_mode="HTML",
         )
     except TelegramBadRequest as e:
