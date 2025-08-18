@@ -3,6 +3,7 @@ import logfire
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from ..repositories import UserRepository
 from ..models import User, Post
+from ..bot.keyboards.link_keyboard import get_post_link_keyboard
 
 
 class NotificationService:
@@ -48,21 +49,29 @@ class NotificationService:
         event_at = getattr(post, 'event_at', None)
         event_str = event_at.strftime('%d.%m.%Y %H:%M') if event_at else ''
         
+        link_text = "\n🔗 Ссылка: есть" if getattr(post, 'link', None) else ''
+        
         return (
             f"📬 Новый пост в категориях '{category_str}'\n\n"
             f"📌 <b>{post.title}</b>\n\n"
             f"📄 {post.content}\n\n"
             f"👤 Автор: {author_name}\n"
-            f"📅 Актуально до: {event_str}"
+            f"📅 Актуально до: {event_str}{link_text}"
         )
 
     @staticmethod
-    def get_like_keyboard(post_id: int, liked: bool = False) -> InlineKeyboardMarkup:
-        """Создать клавиатуру с кнопкой лайка"""
+    def get_like_keyboard(post_id: int, liked: bool = False, post_link: str = None) -> InlineKeyboardMarkup:
+        """Создать клавиатуру с кнопкой лайка и ссылкой"""
+        builder = InlineKeyboardBuilder()
+        
+        # Кнопка лайка
         button_text = "❤️ В избранном" if liked else "🤍 Добавить в избранное"
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text=button_text, callback_data=f"like_post_{post_id}")]
-            ]
-        )
-        return keyboard
+        builder.button(text=button_text, callback_data=f"like_post_{post_id}")
+        
+        # Кнопка ссылки, если она есть
+        if post_link:
+            builder.button(text="🔗 Перейти по ссылке", url=post_link)
+        
+        # Выравниваем кнопки по одной в ряд
+        builder.adjust(1)
+        return builder.as_markup()
