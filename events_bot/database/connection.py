@@ -26,7 +26,7 @@ already_instrumented = False
 def create_async_engine_and_session():
     """Создает асинхронный движок базы данных и сессию"""
     database_url = get_database_url()
-    engine = create_async_engine(database_url, echo=True)
+    engine = create_async_engine(database_url, echo=False)
     session_maker = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
