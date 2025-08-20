@@ -16,7 +16,6 @@ RUN uv sync
 # Копируем исходный код
 COPY . .
 
-
 # Создаем пользователя для безопасности
 RUN useradd --create-home --shell /bin/bash app && \
     chown -R app:app /app
@@ -27,4 +26,4 @@ USER app
 EXPOSE 8080
 
 # Команда запуска
-CMD ["uv", "run", "python", "main.py"] 
+CMD ["python", "main.py"]
