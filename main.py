@@ -50,8 +50,12 @@ async def main():
         return
 
     # Инициализируем базу данных
-    await init_database()
-    logfire.info("✅ Database initialized")
+    try:
+        await init_database()
+        logfire.info("✅ Database initialized")
+    except Exception as e:
+        logfire.error(f"❌ Ошибка инициализации БД: {e}")
+        return
 
     # Создаем бота и диспетчер
     bot = Bot(token=token)
@@ -78,25 +82,23 @@ async def main():
         while True:
             try:
                 async with get_db_session() as db:
-                    # Сначала собираем информацию о просроченных постах (id, image_id)
                     expired = await PostService.get_expired_posts_info(db)
                     deleted = await PostService.delete_expired_posts(db)
                     if deleted:
                         logfire.info(f"🧹 Удалено просроченных постов: {deleted}")
-                        # Удаляем связанные файлы из хранилища
                         for row in expired:
                             image_id = row.get("image_id")
                             if image_id:
                                 try:
                                     await file_storage.delete_file(image_id)
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logfire.warning(f"Не удалось удалить файл {image_id}: {e}")
             except Exception as e:
                 logfire.error(f"Ошибка фоновой очистки постов: {e}")
             await asyncio.sleep(60 * 10)
 
     try:
-        # Запускаем бота и фоновую очистку одновременно
+        # Запускаем бота и фоновую очистку
         await asyncio.gather(
             dp.start_polling(bot),
             cleanup_expired_posts_task(),
