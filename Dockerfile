@@ -1,4 +1,3 @@
-# Используем официальный Python образ
 FROM python:3.12-slim
 
 # Устанавливаем рабочую директорию
@@ -16,7 +15,6 @@ RUN uv sync
 # Копируем исходный код
 COPY . .
 
-
 # Создаем пользователя для безопасности
 RUN useradd --create-home --shell /bin/bash app && \
     chown -R app:app /app
@@ -26,5 +24,5 @@ USER app
 # Открываем порт (если понадобится для веб-хуков)
 EXPOSE 8080
 
-# Команда запуска
-CMD ["uv", "run", "python", "main.py"] 
+# Команда запуска — исправлена!
+CMD ["python", "main.py"]
