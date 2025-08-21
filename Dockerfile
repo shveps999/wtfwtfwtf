@@ -21,8 +21,5 @@ RUN useradd --create-home --shell /bin/bash app && \
 
 USER app
 
-# Открываем порт (если понадобится для веб-хуков)
-EXPOSE 8080
-
 # Команда запуска — исправлена!
 CMD ["python", "main.py"]
