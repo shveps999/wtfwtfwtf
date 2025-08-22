@@ -3,18 +3,21 @@
 Telegram Events Bot - Основной файл приложения
 """
 
+import logfire
+
+# Не требуем авторизации в Logfire, если нет токена
+try:
+    logfire.configure(scrubbing=False, send_to_logfire=False)
+except Exception:
+    pass
+
 import asyncio
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-import logfire
-
-# Конфигурируем Logfire, не требуя токена для локальной работы.
-# Отправка в облако будет работать только если LOGFIRE_TOKEN установлен.
-logfire.configure()
-logfire.info("Logfire сконфигурирован.")
-
 from events_bot.database import init_database
 from events_bot.bot.handlers import (
     register_start_handlers,
@@ -26,75 +29,40 @@ from events_bot.bot.handlers import (
 )
 from events_bot.bot.middleware import DatabaseMiddleware
 from events_bot.database.services.post_service import PostService
+from loguru import logger
 
-
-async def cleanup_expired_posts_task():
-    """Фоновая задача для очистки просроченных постов."""
-    from events_bot.bot.utils import get_db_session
-    from events_bot.storage import file_storage
-    logfire.info("🌀 Запущена фоновая задача по очистке просроченных постов.")
-    
-    while True:
-        try:
-            # Пауза в начале цикла, а не в конце, чтобы не ждать при первом запуске
-            await asyncio.sleep(60 * 10) # 10 минут
-            
-            async with get_db_session() as db:
-                expired_posts_info = await PostService.get_expired_posts_info(db)
-                
-                if not expired_posts_info:
-                    continue
-
-                deleted_count = await PostService.delete_expired_posts(db)
-                
-                if deleted_count:
-                    logfire.info(f"🧹 Удалено/архивировано просроченных постов: {deleted_count}")
-                    for post_info in expired_posts_info:
-                        image_id = post_info.get("image_id")
-                        if image_id:
-                            try:
-                                await file_storage.delete_file(image_id)
-                            except Exception as file_e:
-                                logfire.error(f"Ошибка при удалении файла {image_id}: {file_e}")
-        except asyncio.CancelledError:
-            logfire.info("🌀 Задача по очистке постов была отменена. Завершение работы...")
-            break
-        except Exception as e:
-            logfire.error(f"❌ Критическая ошибка в фоновой задаче очистки постов: {e}", exc_info=True)
-            await asyncio.sleep(60 * 30) 
+logger.configure(
+    handlers=[logfire.loguru_handler()]
+)
 
 
 async def main():
     """Главная функция бота"""
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-        logfire.info("Переменные окружения из .env загружены.")
-    except ImportError:
-        logfire.info(".env файл не найден, используются системные переменные окружения.")
+    # Подхват переменных окружения из .env, если есть ##теперь Подхват переменных окружения из .env.production.example
+    env_path = Path(__file__).parent / 'env.production.example'
+    load_dotenv(env_path)
 
+    # Получаем токен из переменных окружения
     token = os.getenv("BOT_TOKEN")
+    print('token:', token)
     if not token:
-        logfire.critical("❌ КРИТИЧЕСКАЯ ОШИБКА: BOT_TOKEN не установлен!")
+        logfire.error("❌ Error: BOT_TOKEN not set")
         return
 
-    # --- ИСПРАВЛЕНИЕ: Добавлена критически важная проверка DATABASE_URL ---
-    # Приложение не может функционировать без подключения к базе данных.
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        logfire.critical("❌ КРИТИЧЕСКАЯ ОШИБКА: DATABASE_URL не установлен!")
-        return
-
+    # Инициализируем базу данных
     await init_database()
-    logfire.info("✅ База данных инициализирована.")
+    logfire.info("✅ Database initialized")
 
-    bot = Bot(token=token, parse_mode="HTML")
+    # Создаем бота и диспетчер
+    bot = Bot(token=token)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
 
+    # Подключаем middleware для базы данных
     dp.message.middleware(DatabaseMiddleware())
     dp.callback_query.middleware(DatabaseMiddleware())
 
+    # Регистрируем обработчики
     register_start_handlers(dp)
     register_user_handlers(dp)
     register_post_handlers(dp)
@@ -102,27 +70,42 @@ async def main():
     register_moderation_handlers(dp)
     register_feed_handlers(dp)
 
-    cleanup_task = asyncio.create_task(cleanup_expired_posts_task())
-    
-    logfire.info("🤖 Бот запускается...")
+    logfire.info("🤖 Bot started...")
+
+    async def cleanup_expired_posts_task():
+        from events_bot.bot.utils import get_db_session
+        from events_bot.storage import file_storage
+        while True:
+            try:
+                async with get_db_session() as db:
+                    # Сначала собираем информацию о просроченных постах (id, image_id)
+                    expired = await PostService.get_expired_posts_info(db)
+                    deleted = await PostService.delete_expired_posts(db)
+                    if deleted:
+                        logfire.info(f"🧹 Удалено просроченных постов: {deleted}")
+                        # Удаляем связанные файлы из хранилища
+                        for row in expired:
+                            image_id = row.get("image_id")
+                            if image_id:
+                                try:
+                                    await file_storage.delete_file(image_id)
+                                except Exception:
+                                    pass
+            except Exception as e:
+                logfire.error(f"Ошибка фоновой очистки постов: {e}")
+            await asyncio.sleep(60 * 10)
 
     try:
-        await dp.start_polling(bot)
-    except Exception as e:
-        logfire.error(f"Произошла ошибка в основном цикле бота: {e}", exc_info=True)
+        # Запускаем бота и фоновую очистку одновременно
+        await asyncio.gather(
+            dp.start_polling(bot),
+            cleanup_expired_posts_task(),
+        )
+    except KeyboardInterrupt:
+        logfire.info("🛑 Bot stopped")
     finally:
-        logfire.info("🛑 Бот останавливается. Завершаем фоновые задачи...")
-        
-        cleanup_task.cancel()
-        
-        await asyncio.gather(cleanup_task, return_exceptions=True)
-        
         await bot.session.close()
-        logfire.info("✅ Бот успешно остановлен.")
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logfire.info("Программа прервана пользователем (Ctrl+C).")
+    asyncio.run(main())
