@@ -54,13 +54,14 @@ class PostService:
         bot=None,
     ) -> Post:
         """Создать пост и отправить на модерацию"""
-        # Уникализация категорий
-        category_ids = list(set(category_ids))
-        if not title.strip() or not content.strip():
-            logfire.error("Заголовок или содержание пусты")
+        if not title or not content or title.strip() == "/skip":
+            logfire.error("Заголовок пуст или содержит /skip")
             return None
 
-        # Создаем пост
+        # Уникализация категорий
+        category_ids = list(set(category_ids))
+
+        # Парсинг event_at
         parsed_event_at = None
         if event_at is not None:
             try:
@@ -68,8 +69,10 @@ class PostService:
                 if parsed_event_at.tzinfo is not None:
                     parsed_event_at = parsed_event_at.astimezone(timezone.utc)
                 parsed_event_at = parsed_event_at.replace(tzinfo=None)
-            except Exception:
-                parsed_event_at = None
+            except Exception as e:
+                logfire.warning(f"Некорректный формат event_at: {event_at}, ошибка: {e}")
+
+        # Создаем пост
         post = await PostRepository.create_post(
             db, title, content, author_id, category_ids, city, image_id, parsed_event_at
         )
@@ -132,3 +135,83 @@ class PostService:
             logfire.error(f"Неизвестная ошибка отправки: {e}")
             import traceback
             logfire.error(f"Стек: {traceback.format_exc()}")
+
+    @staticmethod
+    async def get_user_posts(db: AsyncSession, user_id: int) -> List[Post]:
+        """Получить посты пользователя"""
+        return await PostRepository.get_user_posts(db, user_id)
+
+    @staticmethod
+    async def get_post_by_id(db: AsyncSession, post_id: int) -> Optional[Post]:
+        """Получить пост по ID"""
+        return await PostRepository.get_post_by_id(db, post_id)
+
+    @staticmethod
+    async def get_posts_by_categories(
+        db: AsyncSession, category_ids: list[int]
+    ) -> list[Post]:
+        """Получить посты по нескольким категориям"""
+        return await PostRepository.get_posts_by_categories(db, category_ids)
+
+    @staticmethod
+    async def get_pending_moderation_posts(db: AsyncSession) -> List[Post]:
+        """Получить посты, ожидающие модерации"""
+        return await PostRepository.get_pending_moderation(db)
+
+    @staticmethod
+    async def approve_post(
+        db: AsyncSession, post_id: int, moderator_id: int, comment: str = None
+    ) -> Post:
+        """Одобрить пост"""
+        return await PostRepository.approve_post(db, post_id, moderator_id, comment)
+
+    @staticmethod
+    async def publish_post(
+        db: AsyncSession, post_id: int
+    ) -> Post:
+        """Опубликовать одобренный пост"""
+        return await PostRepository.publish_post(db, post_id)
+
+    @staticmethod
+    async def reject_post(
+        db: AsyncSession, post_id: int, moderator_id: int, comment: str = None
+    ) -> Post:
+        """Отклонить пост"""
+        return await PostRepository.reject_post(db, post_id, moderator_id, comment)
+
+    @staticmethod
+    async def request_changes(
+        db: AsyncSession, post_id: int, moderator_id: int, comment: str = None
+    ) -> Post:
+        """Запросить изменения в посте"""
+        return await PostRepository.request_changes(db, post_id, moderator_id, comment)
+
+    @staticmethod
+    async def get_feed_posts(
+        db: AsyncSession, user_id: int, limit: int = 10, offset: int = 0
+    ) -> List[Post]:
+        """Получить посты для ленты пользователя"""
+        return await PostRepository.get_feed_posts(db, user_id, limit, offset)
+
+    @staticmethod
+    async def get_feed_posts_count(db: AsyncSession, user_id: int) -> int:
+        """Получить общее количество постов для ленты пользователя"""
+        return await PostRepository.get_feed_posts_count(db, user_id)
+
+    @staticmethod
+    async def get_liked_posts(
+        db: AsyncSession, user_id: int, limit: int = 10, offset: int = 0
+    ) -> List[Post]:
+        return await PostRepository.get_liked_posts(db, user_id, limit, offset)
+
+    @staticmethod
+    async def get_liked_posts_count(db: AsyncSession, user_id: int) -> int:
+        return await PostRepository.get_liked_posts_count(db, user_id)
+
+    @staticmethod
+    async def delete_expired_posts(db: AsyncSession) -> int:
+        return await PostRepository.delete_expired_posts(db)
+
+    @staticmethod
+    async def get_expired_posts_info(db: AsyncSession) -> list[dict]:
+        return await PostRepository.get_expired_posts_info(db)
