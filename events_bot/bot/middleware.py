@@ -11,7 +11,7 @@ class DatabaseMiddleware(BaseMiddleware):
         self,
         handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
         event: TelegramObject,
-        data: Dict[str, Any]
+         Dict[str, Any]
     ) -> Any:
         db = None
         try:
