@@ -5,14 +5,16 @@ Telegram Events Bot - Основной файл приложения
 
 import logfire
 
-# Не требуем авторизации в Logfire, если нет токена
-try:
-    logfire.configure(scrubbing=False, send_to_logfire=True)
-except Exception:
-    pass
+#Не требуем авторизации в Logfire, если нет токена
+# try:
+#     logfire.configure(scrubbing=False, send_to_logfire=True)
+# except Exception:
+#     pass
 
 import asyncio
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -36,25 +38,28 @@ logger.configure(
 
 async def main():
     """Главная функция бота"""
-    # Подхват переменных окружения из .env, если есть
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except Exception:
-        pass
+    # Подхват переменных окружения из .env, если есть ##теперь Подхват переменных окружения из .env.production.example
+    env_path = Path(__file__).parent / 'env.production.example'
+    load_dotenv(env_path)
 
     # Получаем токен из переменных окружения
-    token = os.getenv("BOT_TOKEN")
-    if not token:
+    token_bot = os.getenv("BOT_TOKEN")
+    token_logfire = os.getenv('LOGFIRE_TOKEN')
+    if not token_bot:
         logfire.error("❌ Error: BOT_TOKEN not set")
         return
+
+    try:
+        logfire.configure(token=token_logfire,scrubbing=False, send_to_logfire=True)
+    except Exception:
+        logfire.info("❌ Error: LOGFIRE_TOKEN not set")
 
     # Инициализируем базу данных
     await init_database()
     logfire.info("✅ Database initialized")
 
     # Создаем бота и диспетчер
-    bot = Bot(token=token)
+    bot = Bot(token=token_bot)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
 
