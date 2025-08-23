@@ -7,7 +7,7 @@ import logfire
 
 # Не требуем авторизации в Logfire, если нет токена
 try:
-    logfire.configure(scrubbing=False, send_to_logfire=False)
+    logfire.configure(scrubbing=False, send_to_logfire=True)
 except Exception:
     pass
 
