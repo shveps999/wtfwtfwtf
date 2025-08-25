@@ -1,5 +1,6 @@
 from typing import List
 import logfire
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from ..repositories import UserRepository
 from ..models import User, Post
 
@@ -48,9 +49,20 @@ class NotificationService:
         event_str = event_at.strftime('%d.%m.%Y %H:%M') if event_at else ''
         
         return (
-            f"Новый пост в категориях '{category_str}'\n\n"
-            f"{post.title}\n\n"
-            f"{post.content}\n\n"
-            f"Автор: {author_name}\n"
-            f"Актуально до: {event_str}"
+            f"📬 Новый пост в категориях '{category_str}'\n\n"
+            f"📌 <b>{post.title}</b>\n\n"
+            f"📄 {post.content}\n\n"
+            f"👤 Автор: {author_name}\n"
+            f"📅 Актуально до: {event_str}"
         )
+
+    @staticmethod
+    def get_like_keyboard(post_id: int, liked: bool = False) -> InlineKeyboardMarkup:
+        """Создать клавиатуру с кнопкой лайка"""
+        button_text = "❤️ В избранном" if liked else "🤍 Добавить в избранное"
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text=button_text, callback_data=f"like_post_{post_id}")]
+            ]
+        )
+        return keyboard

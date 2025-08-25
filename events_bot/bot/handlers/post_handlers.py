@@ -266,3 +266,4 @@ async def continue_post_creation(callback_or_message: Union[Message, CallbackQue
             reply_markup=get_main_keyboard(),
         )
         await state.clear()
+#PostService.create_post_and_send_to_moderation

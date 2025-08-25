@@ -44,7 +44,16 @@ class LikeService:
         db: AsyncSession, user_id: int, post_id: int
     ) -> Dict[str, Any]:
         """Переключить лайк пользователя на пост"""
-        return await LikeRepository.toggle_like(db, user_id, post_id)
+        existing_like = await LikeService.get_user_like(db, user_id, post_id)
+        if existing_like:
+            await LikeService.remove_like(db, user_id, post_id)
+            action = "removed"
+        else:
+            await LikeService.add_like(db, user_id, post_id)
+            action = "added"
+        
+        likes_count = await LikeService.get_post_likes_count(db, post_id)
+        return {"action": action, "likes_count": likes_count}
 
     @staticmethod
     async def is_post_liked_by_user(

@@ -7,10 +7,8 @@ import os
 import logfire
 from events_bot.bot.keyboards.moderation_keyboard import get_moderation_keyboard
 from events_bot.storage import file_storage
+from aiogram.types import FSInputFile, InputMediaPhoto
 from .moderation_service import ModerationService
-from aiogram import Bot
-from aiogram.types import InputMediaPhoto
-from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
 
 
 class PostService:
@@ -32,6 +30,7 @@ class PostService:
         if event_at is not None:
             try:
                 parsed_event_at = datetime.fromisoformat(event_at)
+                # Приводим к UTC и убираем tzinfo для корректного сравнения в SQLite
                 if parsed_event_at.tzinfo is not None:
                     parsed_event_at = parsed_event_at.astimezone(timezone.utc)
                 parsed_event_at = parsed_event_at.replace(tzinfo=None)
@@ -54,15 +53,7 @@ class PostService:
         bot=None,
     ) -> Post:
         """Создать пост и отправить на модерацию"""
-        # Проверка на пустые или командные заголовки
-        if not title or not title.strip() or title.strip() == "/skip":
-            logfire.error("Заголовок поста пуст или содержит команду: %s", title)
-            return None
-
-        # Уникализация категорий
-        category_ids = list(set(category_ids))
-
-        # Парсинг времени события
+        # Создаем пост
         parsed_event_at = None
         if event_at is not None:
             try:
@@ -70,51 +61,46 @@ class PostService:
                 if parsed_event_at.tzinfo is not None:
                     parsed_event_at = parsed_event_at.astimezone(timezone.utc)
                 parsed_event_at = parsed_event_at.replace(tzinfo=None)
-            except Exception as e:
-                logfire.warning("Некорректный формат event_at: %s, ошибка: %s", event_at, e)
-
-        # Создаем пост
+            except Exception:
+                parsed_event_at = None
         post = await PostRepository.create_post(
             db, title, content, author_id, category_ids, city, image_id, parsed_event_at
         )
-
+        
         # Отправляем на модерацию
         if post and bot:
             await PostService.send_post_to_moderation(bot, post, db)
-
+        
         return post
 
     @staticmethod
-    async def send_post_to_moderation(bot: Bot, post: Post, db=None):
+    async def send_post_to_moderation(bot, post: Post, db=None):
         """Отправить пост на модерацию"""
-        moderation_group_id_str = os.getenv("MODERATION_GROUP_ID")
-        logfire.info(f"MODERATION_GROUP_ID: {moderation_group_id_str}")
-
-        if not moderation_group_id_str:
+        moderation_group_id = os.getenv("MODERATION_GROUP_ID")
+        logfire.info(f"MODERATION_GROUP_ID: {moderation_group_id}")
+        
+        if not moderation_group_id:
             logfire.error("MODERATION_GROUP_ID не установлен")
             return
-
-        try:
-            moderation_group_id = int(moderation_group_id_str)
-        except ValueError:
-            logfire.error(f"Некорректный MODERATION_GROUP_ID: {moderation_group_id_str}")
-            return
-
-        # Загружаем связанные объекты
+        
+        # Загружаем связанные объекты если передан db
         if db:
             await db.refresh(post, attribute_names=["author", "categories"])
-
-        # Форматируем текст для модерации
+        
+        # Форматируем пост для модерации
         moderation_text = ModerationService.format_post_for_moderation(post)
         moderation_keyboard = get_moderation_keyboard(post.id)
-
+        
         logfire.info(f"Отправляем пост {post.id} на модерацию в группу {moderation_group_id}")
-
+        logfire.debug(f"Текст модерации: {moderation_text[:100]}...")
+        
         try:
-            # Если есть изображение — пробуем отправить как фото
+            # Если у поста есть изображение, отправляем с фото
             if post.image_id:
+                logfire.info(f"Пост содержит изображение: {post.image_id}")
                 media_photo = await file_storage.get_media_photo(post.image_id)
                 if media_photo:
+                    logfire.info("Изображение найдено")
                     await bot.send_photo(
                         chat_id=moderation_group_id,
                         photo=media_photo.media,
@@ -124,27 +110,20 @@ class PostService:
                     logfire.info("Пост с изображением отправлен на модерацию")
                     return
                 else:
-                    logfire.warning("Изображение с ID %s не найдено", post.image_id)
-
-            # Если фото нет или не найдено — отправляем как текст
+                    logfire.warning("Изображение не найдено")
+            
+            # Если нет изображения, отправляем только текст
+            logfire.info("Отправляем пост без изображения")
             await bot.send_message(
                 chat_id=moderation_group_id,
                 text=moderation_text,
                 reply_markup=moderation_keyboard
             )
             logfire.info("Пост без изображения отправлен на модерацию")
-
-        except TelegramForbiddenError:
-            logfire.error("Бот не имеет прав на отправку сообщений в группу %s", moderation_group_id)
-        except TelegramBadRequest as e:
-            if "chat not found" in str(e):
-                logfire.error("Группа не найдена. Проверьте ID: %s", moderation_group_id)
-            else:
-                logfire.error("Неверный запрос при отправке поста: %s", e)
         except Exception as e:
-            logfire.error("Неизвестная ошибка при отправке поста на модерацию: %s", e)
+            logfire.error(f"Ошибка отправки поста на модерацию: {e}")
             import traceback
-            logfire.error("Стек ошибки:\n%s", traceback.format_exc())
+            logfire.error(f"Стек ошибки: {traceback.format_exc()}")
 
     @staticmethod
     async def get_user_posts(db: AsyncSession, user_id: int) -> List[Post]:

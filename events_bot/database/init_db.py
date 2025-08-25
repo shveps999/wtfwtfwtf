@@ -8,7 +8,12 @@ async def init_database():
     engine, session_maker = create_async_engine_and_session()
 
     # Создаем таблицы
-    await create_tables(engine)
+    try:
+        await create_tables(engine)
+        logfire.info("✅ Таблицы успешно созданы")
+    except Exception as e:
+        logfire.error(f"❌ Ошибка создания таблиц: {e}")
+        raise
 
     # Создаем сессию для добавления данных
     async with session_maker() as db:
@@ -57,20 +62,13 @@ async def init_database():
                         description=category_data["description"],
                     )
 
-                logfire.info("Database initialized with example categories!")
+                logfire.info("✅ База данных инициализирована с категориями!")
             else:
                 logfire.info(
-                    f"Database already has {len(existing_categories)} categories"
+                    f"База данных уже содержит {len(existing_categories)} категорий"
                 )
 
         except Exception as e:
-            logfire.error(f"Error initializing database: {e}")
+            logfire.error(f"❌ Ошибка инициализации базы данных: {e}")
             await db.rollback()
-
-    await engine.dispose()
-
-
-if __name__ == "__main__":
-    import asyncio
-
-    asyncio.run(init_database())
+            raise

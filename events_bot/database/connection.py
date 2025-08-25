@@ -13,6 +13,7 @@ def get_database_url():
     env_path = Path(__file__).parent / 'env.production.example'
     load_dotenv(env_path)
     database_url = os.getenv("DATABASE_URL")
+    print('TOKEN SQL:', database_url)
     
     if not database_url:
         raise ValueError("DATABASE_URL не установлен в переменных окружения")

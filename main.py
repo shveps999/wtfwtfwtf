@@ -5,12 +5,6 @@ Telegram Events Bot - Основной файл приложения
 
 import logfire
 
-# Не требуем авторизации в Logfire, если нет токена
-try:
-    logfire.configure(scrubbing=False, send_to_logfire=False)
-except Exception:
-    pass
-
 import asyncio
 import os
 from pathlib import Path
@@ -43,9 +37,15 @@ async def main():
     load_dotenv(env_path)
 
     # Получаем токен из переменных окружения
-    token = os.getenv("BOT_TOKEN")
-    print('token:', token)
-    if not token:
+    token_bot = os.getenv("BOT_TOKEN")
+    token_logfire = os.getenv('LOGFIRE_TOKEN')
+
+    try:
+        logfire.configure(token=token_logfire)
+    except Exception:
+        logfire.info("❌ Error: LOGFIRE_TOKEN not set")
+
+    if not token_bot:
         logfire.error("❌ Error: BOT_TOKEN not set")
         return
 
@@ -54,7 +54,7 @@ async def main():
     logfire.info("✅ Database initialized")
 
     # Создаем бота и диспетчер
-    bot = Bot(token=token)
+    bot = Bot(token=token_bot)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
 
